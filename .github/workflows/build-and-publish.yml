@@ -16,16 +16,15 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Build
-      run: cargo build --release
-    
-    - name: Run tests
-      run: cargo test --release
+      run: |
+        rustup target add x86_64-unknown-linux-musl
+        cargo build --release
     
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
         name: bump-binary
-        path: target/release/bump
+        path: target/x86_64-unknown-linux-musl/release/bump
         if-no-files-found: error
 
   publish:

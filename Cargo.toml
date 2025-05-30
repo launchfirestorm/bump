@@ -10,5 +10,9 @@ readme = "README.md"
 keywords = ["versioning", "semver", "version"]
 categories = ["command-line-utilities", "development-tools"]
 
+[[bin]]
+name = "bump"
+path = "src/main.rs"
+
 [dependencies]
 clap = "4.5"
