@@ -2,6 +2,13 @@
 name = "bump"
 version = "0.1.0"
 edition = "2024"
+authors = ["Firestorm Team"]
+description = "A semantic versioning tool for bumping version numbers"
+license = "MIT"
+repository = "https://github.com/launchfirestorm/bump"
+readme = "README.md"
+keywords = ["versioning", "semver", "version"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-clap = "*"
+clap = "4.5"
