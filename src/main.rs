@@ -1,6 +1,9 @@
 use clap::{Arg, Command};
 use std::{fs, path::Path, io, fmt};
 
+#[cfg(test)]
+mod tests;
+
 // Keep the version in source code
 const BUMP_VERSION: &str = "1.0.1";
 
