@@ -10,14 +10,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: rust:latest
+      image: rust:alpine
     
     steps:
     - uses: actions/checkout@v4
-    
+
+    - name: Install cross-compilation tools for arm
+      run: |
+        apk add --no-cache binutils-aarch64
+        rustup target add aarch64-unknown-linux-musl
+
     - name: Build && Test
       run: |
-        rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
         cargo build --release --target x86_64-unknown-linux-musl
         cargo build --release --target aarch64-unknown-linux-musl
         cargo test --release --target x86_64-unknown-linux-musl
