@@ -15,4 +15,4 @@ name = "bump"
 path = "src/main.rs"
 
 [dependencies]
-clap = "4.5"
+clap = "4"
