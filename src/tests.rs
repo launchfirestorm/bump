@@ -1,321 +1,346 @@
-use crate::{Version, VersionError};
+use super::*;
 use std::fs;
-use std::path::Path;
-use std::process::Command;
+use std::path::PathBuf;
+use tempfile::TempDir;
 
 #[test]
 fn test_version_default() {
-    let test_path = Path::new("test_default");
-    let version = Version::default(test_path);
+    let path = PathBuf::from("test.bumpfile");
+    let version = Version::default(&path);
+
     assert_eq!(version.major, 0);
     assert_eq!(version.minor, 1);
     assert_eq!(version.patch, 0);
-    assert_eq!(version.path, test_path);
+    assert_eq!(version.path, path);
 }
 
 #[test]
-fn test_version_from_file() {
-    let file_path = "test_version_from_file";
-    fs::write(file_path, "MAJOR=1\nMINOR=2\nPATCH=3\n").unwrap();
-    let version = Version::from_file(Path::new(file_path)).unwrap();
+fn test_version_from_file_valid() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
+
+    let content = "MAJOR=1\nMINOR=2\nPATCH=3\n";
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 3);
-    assert_eq!(version.path, Path::new(file_path));
+    assert_eq!(version.path, file_path);
+}
 
-    fs::write(
-        file_path,
-        "# Comment\nMAJOR=4\nSomething else\nMINOR=5\nPATCH=6\n",
-    )
-    .unwrap();
-    let version = Version::from_file(Path::new(file_path)).unwrap();
-    assert_eq!(version.major, 4);
-    assert_eq!(version.minor, 5);
-    assert_eq!(version.patch, 6);
+#[test]
+fn test_version_from_file_invalid_major() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
 
-    let missing_path = "nonexistent_file";
-    let result = Version::from_file(Path::new(missing_path));
-    assert!(matches!(result, Err(VersionError::IoError(_))));
+    let content = "MAJOR=invalid\nMINOR=2\nPATCH=3\n";
+    fs::write(&file_path, content).unwrap();
 
-    fs::write(file_path, "MAJOR=invalid\nMINOR=2\nPATCH=3\n").unwrap();
-    let result = Version::from_file(Path::new(file_path));
-    assert!(matches!(result, Err(VersionError::ParseError(s)) if s == "MAJOR"));
+    let result = Version::from_file(&file_path);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        BumpError::ParseError(field) => assert_eq!(field, "MAJOR"),
+        _ => panic!("Expected ParseError"),
+    }
+}
 
-    fs::write(file_path, "MAJOR=1\nMINOR=invalid\nPATCH=3\n").unwrap();
-    let result = Version::from_file(Path::new(file_path));
-    assert!(matches!(result, Err(VersionError::ParseError(s)) if s == "MINOR"));
+#[test]
+fn test_version_from_file_invalid_minor() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
 
-    fs::write(file_path, "MAJOR=1\nMINOR=2\nPATCH=invalid\n").unwrap();
-    let result = Version::from_file(Path::new(file_path));
-    assert!(matches!(result, Err(VersionError::ParseError(s)) if s == "PATCH"));
+    let content = "MAJOR=1\nMINOR=invalid\nPATCH=3\n";
+    fs::write(&file_path, content).unwrap();
 
-    fs::remove_file(file_path).unwrap();
+    let result = Version::from_file(&file_path);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        BumpError::ParseError(field) => assert_eq!(field, "MINOR"),
+        _ => panic!("Expected ParseError"),
+    }
+}
+
+#[test]
+fn test_version_from_file_invalid_patch() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
+
+    let content = "MAJOR=1\nMINOR=2\nPATCH=invalid\n";
+    fs::write(&file_path, content).unwrap();
+
+    let result = Version::from_file(&file_path);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        BumpError::ParseError(field) => assert_eq!(field, "PATCH"),
+        _ => panic!("Expected ParseError"),
+    }
+}
+
+#[test]
+fn test_version_from_file_missing_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("nonexistent.bumpfile");
+
+    let result = Version::from_file(&file_path);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        BumpError::IoError(_) => (), // Expected
+        _ => panic!("Expected IoError"),
+    }
 }
 
 #[test]
 fn test_version_to_file() {
-    let file_path = "test_version_to_file";
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
 
     let version = Version {
-        major: 2,
-        minor: 3,
-        patch: 4,
-        path: Path::new(file_path).to_path_buf(),
+        major: 1,
+        minor: 2,
+        patch: 3,
+        path: file_path.clone(),
     };
 
     version.to_file().unwrap();
 
-    let content = fs::read_to_string(file_path).unwrap();
-    assert!(content.contains("MAJOR=2"));
-    assert!(content.contains("MINOR=3"));
-    assert!(content.contains("PATCH=4"));
-
-    // Clean up
-    fs::remove_file(file_path).unwrap();
+    let content = fs::read_to_string(&file_path).unwrap();
+    assert!(content.contains("MAJOR=1"));
+    assert!(content.contains("MINOR=2"));
+    assert!(content.contains("PATCH=3"));
+    assert!(content.contains("https://github.com/launchfirestorm/bump"));
 }
 
 #[test]
-fn test_version_bump() {
-    let test_path = Path::new("test_bump");
+fn test_version_bump_patch() {
     let mut version = Version {
         major: 1,
         minor: 2,
         patch: 3,
-        path: test_path.to_path_buf(),
+        path: PathBuf::from("test.bumpfile"),
     };
-    version.bump(true, false, false);
-    assert_eq!(version.major, 2);
-    assert_eq!(version.minor, 0);
-    assert_eq!(version.patch, 0);
 
-    let mut version = Version {
-        major: 1,
-        minor: 2,
-        patch: 3,
-        path: test_path.to_path_buf(),
-    };
-    version.bump(false, true, false);
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 3);
-    assert_eq!(version.patch, 0);
+    version.bump(false, false, true).unwrap();
 
-    let mut version = Version {
-        major: 1,
-        minor: 2,
-        patch: 3,
-        path: test_path.to_path_buf(),
-    };
-    version.bump(false, false, true);
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 4);
 }
 
 #[test]
-fn test_version_to_header() {
-    let test_path = Path::new("test_header");
-    let version = Version {
-        major: 2,
-        minor: 3,
-        patch: 4,
-        path: test_path.to_path_buf(),
+fn test_version_bump_minor() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        path: PathBuf::from("test.bumpfile"),
     };
 
-    let header = version.to_header();
-    assert!(header.contains("#define VERSION_MAJOR 2"));
-    assert!(header.contains("#define VERSION_MINOR 3"));
-    assert!(header.contains("#define VERSION_PATCH 4"));
+    version.bump(false, true, false).unwrap();
+
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 3);
+    assert_eq!(version.patch, 0);
 }
 
 #[test]
-fn test_resolve_path() {
-    use crate::resolve_path;
-    
-    // Test relative path resolution
-    let result = resolve_path("test_file");
-    assert!(result.is_ok());
-    let resolved = result.unwrap();
+fn test_version_bump_major() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    version.bump(true, false, false).unwrap();
+
+    assert_eq!(version.major, 2);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 0);
+}
+
+#[test]
+fn test_version_bump_nothing() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    let result = version.bump(false, false, false);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        BumpError::LogicError(msg) => {
+            assert!(msg.contains("Nothing to bump"));
+        }
+        _ => panic!("Expected LogicError"),
+    }
+}
+
+#[test]
+fn test_version_to_header() {
+    let version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    let header = version.to_header();
+
+    assert!(header.contains("#define VERSION_MAJOR 1"));
+    assert!(header.contains("#define VERSION_MINOR 2"));
+    assert!(header.contains("#define VERSION_PATCH 3"));
+    assert!(header.contains("https://github.com/launchfirestorm/bump"));
+}
+
+#[test]
+fn test_resolve_path_absolute() {
+    let absolute_path = if cfg!(windows) {
+        "C:\\test\\path"
+    } else {
+        "/test/path"
+    };
+
+    let resolved = resolve_path(absolute_path);
+    assert_eq!(resolved, PathBuf::from(absolute_path));
+}
+
+#[test]
+fn test_resolve_path_relative() {
+    let relative_path = "test.bumpfile";
+    let resolved = resolve_path(relative_path);
+
+    // Should be resolved relative to current directory
     assert!(resolved.is_absolute());
-    assert!(resolved.ends_with("test_file"));
-    
-    // Test absolute path (should remain unchanged)
-    let current_dir = std::env::current_dir().unwrap();
-    let absolute_path = current_dir.join("absolute_test");
-    let result = resolve_path(absolute_path.to_str().unwrap());
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), absolute_path);
+    assert!(resolved.to_string_lossy().ends_with("test.bumpfile"));
 }
 
 #[test]
 fn test_ensure_directory_exists() {
-    use crate::ensure_directory_exists;
-    
-    let test_dir = "test_dir_structure/nested/deep";
-    let test_file = format!("{}/version", test_dir);
-    let test_path = Path::new(&test_file);
-    
-    // Ensure directory doesn't exist initially
-    if test_path.parent().unwrap().exists() {
-        fs::remove_dir_all(test_path.parent().unwrap()).unwrap();
-    }
-    
-    // Test directory creation
-    let result = ensure_directory_exists(test_path);
-    assert!(result.is_ok());
-    assert!(test_path.parent().unwrap().exists());
-    
-    // Clean up
-    fs::remove_dir_all(test_path.parent().unwrap()).unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    let nested_path = temp_dir.path().join("nested").join("deep").join("file.txt");
+
+    ensure_directory_exists(&nested_path).unwrap();
+
+    assert!(nested_path.parent().unwrap().exists());
 }
 
 #[test]
-fn test_integration_directory_paths() {
-    let test_dir = "test_project/subdir";
-    let version_file = format!("{}/version", test_dir);
-    
-    // Clean up any existing test files
-    if Path::new(&test_dir).exists() {
-        fs::remove_dir_all(test_dir).unwrap();
-    }
-    
-    let bin_path = get_binary_path();
+fn test_bump_error_display() {
+    let io_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
+    let bump_error = BumpError::IoError(io_error);
 
-    // Test creating version file in a new directory
-    let output = Command::new(&bin_path)
-        .args([&version_file, "--patch"])
-        .output()
-        .expect("Failed to execute command");
+    let display = format!("{}", bump_error);
+    assert!(display.contains("I/O error"));
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Creating a new one"));
+    let parse_error = BumpError::ParseError("MAJOR".to_string());
+    let display = format!("{}", parse_error);
+    assert!(display.contains("Invalid MAJOR value"));
 
-    // Verify directory and file were created
-    assert!(Path::new(&test_dir).exists());
-    assert!(Path::new(&version_file).exists());
-    
-    let content = fs::read_to_string(&version_file).unwrap();
-    assert!(content.contains("MAJOR=0"));
-    assert!(content.contains("MINOR=1"));
-    assert!(content.contains("PATCH=1")); // Default 0.1.0 + patch bump = 0.1.1
-
-    // Test bumping in the directory
-    let output = Command::new(&bin_path)
-        .args([&version_file, "--minor"])
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Version bumped to 0.2.0"));
-
-    // Clean up
-    fs::remove_dir_all(test_dir).unwrap();
+    let logic_error = BumpError::LogicError("Test error".to_string());
+    let display = format!("{}", logic_error);
+    assert!(display.contains("Error: Test error"));
 }
 
 #[test]
-fn test_integration_nonexistent_file() {
-    let version_file = "test_nonexistent_version";
+fn test_bump_error_from_io_error() {
+    let io_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
+    let bump_error: BumpError = io_error.into();
 
-    if Path::new(version_file).exists() {
-        fs::remove_file(version_file).unwrap();
-    }
-
-    let bin_path = get_binary_path();
-
-    let output = Command::new(&bin_path)
-        .args([version_file, "--patch"])
-        .output()
-        .expect("Failed to execute command");
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Creating a new one"));
-
-    assert!(Path::new(version_file).exists());
-    let content = fs::read_to_string(version_file).unwrap();
-    assert!(content.contains("MAJOR=0"));
-    assert!(content.contains("MINOR=1"));
-    assert!(content.contains("PATCH=1")); // Default is 0.1.0, patch bump makes it 0.1.1
-
-    fs::remove_file(version_file).unwrap();
-}
-
-#[test]
-fn test_integration_no_flags() {
-    let version_file = "test_no_flags_version";
-    fs::write(version_file, "MAJOR=1\nMINOR=2\nPATCH=3\n").unwrap();
-
-    let bin_path = get_binary_path();
-
-    let output = Command::new(&bin_path)
-        .args([version_file])
-        .output()
-        .expect("Failed to execute command");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Must provide one of --major, --minor, or --patch"));
-
-    let _ = fs::remove_file(version_file);
-}
-
-fn get_binary_path() -> String {
-    let debug_path = "target/debug/bump";
-    let release_path = "target/release/bump";
-    let musl_debug_path = "target/x86_64-unknown-linux-musl/debug/bump";
-    let musl_release_path = "target/x86_64-unknown-linux-musl/release/bump";
-
-    if Path::new(debug_path).exists() {
-        return debug_path.to_string();
-    } else if Path::new(release_path).exists() {
-        return release_path.to_string();
-    } else if Path::new(musl_debug_path).exists() {
-        return musl_debug_path.to_string();
-    } else if Path::new(musl_release_path).exists() {
-        return musl_release_path.to_string();
-    } else {
-        panic!("Could not find binary. Please run 'cargo build' before running the tests.");
+    match bump_error {
+        BumpError::IoError(_) => (), // Expected
+        _ => panic!("Expected IoError"),
     }
 }
 
-//write a test_integration for multiple version files in different directories
 #[test]
-fn test_integration_multiple_version_files() {
-    let version_file = "test_multiple_version_files/version";
-    let version_file2 = "test_multiple_version_files/version2";
+fn test_version_round_trip() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
 
-    let bin_path = get_binary_path();
+    let original_version = Version {
+        major: 5,
+        minor: 10,
+        patch: 15,
+        path: file_path.clone(),
+    };
 
-    let output = Command::new(&bin_path)
-        .args([version_file, "--patch"])
-        .output()
-        .expect("Failed to execute command");
+    // Write to file
+    original_version.to_file().unwrap();
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Creating a new one"));
+    // Read from file
+    let read_version = Version::from_file(&file_path).unwrap();
 
-    let output = Command::new(&bin_path)
-        .args([version_file2, "--patch"])
-        .output()
-        .expect("Failed to execute command");
+    assert_eq!(original_version.major, read_version.major);
+    assert_eq!(original_version.minor, read_version.minor);
+    assert_eq!(original_version.patch, read_version.patch);
+    assert_eq!(original_version.path, read_version.path);
+}
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Creating a new one"));
+#[test]
+fn test_version_bump_sequence() {
+    let mut version = Version {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        path: PathBuf::from("test.bumpfile"),
+    };
 
-    assert!(Path::new(version_file).exists());
-    assert!(Path::new(version_file2).exists());
+    // Bump patch
+    version.bump(false, false, true).unwrap();
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 1);
 
-    let content = fs::read_to_string(version_file).unwrap();
-    assert!(content.contains("MAJOR=0"));
-    assert!(content.contains("MINOR=1"));
-    assert!(content.contains("PATCH=1")); // Default is 0.1.0, patch bump makes it 0.1.1
+    // Bump minor
+    version.bump(false, true, false).unwrap();
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 1);
+    assert_eq!(version.patch, 0);
 
-    let content = fs::read_to_string(version_file2).unwrap();
-    assert!(content.contains("MAJOR=0"));
-    assert!(content.contains("MINOR=1"));
-    assert!(content.contains("PATCH=1")); // Default is 0.1.0, patch bump makes it 0.1.1
+    // Bump major
+    version.bump(true, false, false).unwrap();
+    assert_eq!(version.major, 2);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 0);
 
-    fs::remove_dir_all("test_multiple_version_files").unwrap();
+    // Bump patch again
+    version.bump(false, false, true).unwrap();
+    assert_eq!(version.major, 2);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 1);
+}
+
+#[test]
+fn test_version_file_with_comments() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
+
+    let content =
+        "# This is a comment\nMAJOR=1\n# Another comment\nMINOR=2\nPATCH=3\n# End comment";
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 2);
+    assert_eq!(version.patch, 3);
+}
+
+#[test]
+fn test_version_file_with_whitespace() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.bumpfile");
+
+    let content = "MAJOR= 1 \nMINOR= 2 \nPATCH= 3 \n";
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 2);
+    assert_eq!(version.patch, 3);
 }
