@@ -173,12 +173,27 @@ fn test_version_to_string_development() {
         minor: 2,
         patch: 3,
         candidate: 0,
-        commit: "abc1234".to_string(),
+        commit: "abc1234".to_string(), // Actual commit SHA for development
         path: PathBuf::from("test.bumpfile"),
     };
 
     let version_string = version.to_string(&BumpType::Development);
     assert_eq!(version_string, "1.2.3+abc1234");
+}
+
+#[test]
+fn test_version_to_string_development_tagged() {
+    let version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 0,
+        commit: "tagged".to_string(), // Tagged releases
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    let version_string = version.to_string(&BumpType::Development);
+    assert_eq!(version_string, "1.2.3+tagged");
 }
 
 #[test]
@@ -188,7 +203,7 @@ fn test_version_to_header() {
         minor: 2,
         patch: 3,
         candidate: 4,
-        commit: "abc1234".to_string(),
+        commit: "tagged".to_string(), // Point releases use "tagged"
         path: PathBuf::from("test.bumpfile"),
     };
 
@@ -198,8 +213,30 @@ fn test_version_to_header() {
     assert!(header.contains("#define VERSION_MINOR 2"));
     assert!(header.contains("#define VERSION_PATCH 3"));
     assert!(header.contains("#define VERSION_CANDIDATE 4"));
-    assert!(header.contains("#define VERSION_COMMIT abc1234"));
+    assert!(header.contains("#define VERSION_COMMIT tagged"));
     assert!(header.contains("#define VERSION_STRING \"1.2.3\""));
+    assert!(header.contains("https://github.com/launchfirestorm/bump"));
+}
+
+#[test]
+fn test_version_to_header_development() {
+    let version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 0,
+        commit: "abc1234".to_string(), // Development builds use actual commit SHA
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    let header = version.to_header(&BumpType::Development);
+
+    assert!(header.contains("#define VERSION_MAJOR 1"));
+    assert!(header.contains("#define VERSION_MINOR 2"));
+    assert!(header.contains("#define VERSION_PATCH 3"));
+    assert!(header.contains("#define VERSION_CANDIDATE 0"));
+    assert!(header.contains("#define VERSION_COMMIT abc1234"));
+    assert!(header.contains("#define VERSION_STRING \"1.2.3+abc1234\""));
     assert!(header.contains("https://github.com/launchfirestorm/bump"));
 }
 
@@ -273,7 +310,7 @@ fn test_version_round_trip() {
         minor: 10,
         patch: 15,
         candidate: 2,
-        commit: "def5678".to_string(),
+        commit: "tagged".to_string(), // Use "tagged" for consistency
         path: file_path.clone(),
     };
 
@@ -342,12 +379,162 @@ fn test_get_commit_sha() {
     }
 }
 
-// Note: The following tests for the bump() method cannot be easily tested
-// without mocking the git command, as they depend on get_commit_sha().
-// In a real testing environment, you would need to either:
-// 1. Mock the get_commit_sha function
-// 2. Ensure you're in a git repository with commits
-// 3. Skip the bump tests when git is not available
+// Note: The following tests for the bump() method can now be tested
+// because point and candidate bumps no longer depend on git.
+// Only development bumps require git access.
+
+#[test]
+fn test_version_bump_major() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "abc1234".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    version.bump(&BumpType::Point(PointType::MAJOR)).unwrap();
+
+    assert_eq!(version.major, 2);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 0);
+    assert_eq!(version.candidate, 0);
+    assert_eq!(version.commit, "tagged");
+}
+
+#[test]
+fn test_version_bump_minor() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "abc1234".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    version.bump(&BumpType::Point(PointType::MINOR)).unwrap();
+
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 3);
+    assert_eq!(version.patch, 0);
+    assert_eq!(version.candidate, 0);
+    assert_eq!(version.commit, "tagged");
+}
+
+#[test]
+fn test_version_bump_patch() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "abc1234".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    version.bump(&BumpType::Point(PointType::PATCH)).unwrap();
+
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 2);
+    assert_eq!(version.patch, 4);
+    assert_eq!(version.candidate, 0);
+    assert_eq!(version.commit, "tagged");
+}
+
+#[test]
+fn test_version_bump_candidate() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "abc1234".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    version.bump(&BumpType::Candidate).unwrap();
+
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 2);
+    assert_eq!(version.patch, 3);
+    assert_eq!(version.candidate, 5);
+    assert_eq!(version.commit, "tagged");
+}
+
+#[test]
+fn test_version_bump_development() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "oldcommit".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    // This test will only work in a git repository
+    match version.bump(&BumpType::Development) {
+        Ok(()) => {
+            // If successful, the commit should be updated to the current git SHA
+            assert_eq!(version.major, 1); // Unchanged
+            assert_eq!(version.minor, 2); // Unchanged
+            assert_eq!(version.patch, 3); // Unchanged
+            assert_eq!(version.candidate, 4); // Unchanged
+            assert_ne!(version.commit, "oldcommit"); // Should be updated
+            assert_eq!(version.commit.len(), 7); // Should be 7-char SHA
+        },
+        Err(_) => {
+            // Expected if not in a git repository
+            println!("Development bump failed (expected if not in git repo)");
+        }
+    }
+}
+
+#[test]
+fn test_version_bump_sequence() {
+    let mut version = Version {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        candidate: 0,
+        commit: "initial".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    // Bump patch
+    version.bump(&BumpType::Point(PointType::PATCH)).unwrap();
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 1);
+    assert_eq!(version.candidate, 0);
+    assert_eq!(version.commit, "tagged");
+
+    // Bump candidate
+    version.bump(&BumpType::Candidate).unwrap();
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 1);
+    assert_eq!(version.candidate, 1);
+    assert_eq!(version.commit, "tagged");
+
+    // Bump minor (should reset patch and candidate)
+    version.bump(&BumpType::Point(PointType::MINOR)).unwrap();
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 1);
+    assert_eq!(version.patch, 0);
+    assert_eq!(version.candidate, 0);
+    assert_eq!(version.commit, "tagged");
+
+    // Bump major (should reset minor, patch and candidate)
+    version.bump(&BumpType::Point(PointType::MAJOR)).unwrap();
+    assert_eq!(version.major, 2);
+    assert_eq!(version.minor, 0);
+    assert_eq!(version.patch, 0);
+    assert_eq!(version.candidate, 0);
+    assert_eq!(version.commit, "tagged");
+}
 
 #[test]
 fn test_bump_types() {

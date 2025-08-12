@@ -142,35 +142,31 @@ COMMIT={}
     }
 
     fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
-        // commit-sha is stored in every bump, though not apart of the final version string
-        // it will be in the bumpfile to ease tracking
-        let commit = get_commit_sha()?;
-
         match bump_type {
             BumpType::Point(PointType::MAJOR) => {
                 self.major += 1;
                 self.minor = 0;
                 self.patch = 0;
                 self.candidate = 0;
-                self.commit = commit;
+                self.commit = String::from("tagged");
             }
             BumpType::Point(PointType::MINOR) => {
                 self.minor += 1;
                 self.patch = 0;
                 self.candidate = 0;
-                self.commit = commit;
+                self.commit = String::from("tagged");
             }
             BumpType::Point(PointType::PATCH) => {
                 self.patch += 1;
                 self.candidate = 0;
-                self.commit = commit;
+                self.commit = String::from("tagged");
             }
             BumpType::Candidate => {
                 self.candidate += 1;
-                self.commit = commit;
+                self.commit = String::from("tagged");
             }
             BumpType::Development => {
-                self.commit = commit;
+                self.commit = get_commit_sha()?;
             }
         }
         Ok(())
@@ -325,18 +321,22 @@ fn initialize() -> Result<Version, BumpError> {
     Ok(version)
 }
 
-fn show(version: &Version, just_number: bool) {
-    if just_number {
-        println!("{}.{}.{}", version.major, version.minor, version.patch);
-    } else {
-        println!(
-            "'{}' version: {}.{}.{}",
-            version.path.display(),
-            version.major,
-            version.minor,
-            version.patch
-        );
+fn show(version: &Version, full: bool) {
+    let mut output = String::new();
+
+    if full {
+        output.push_str(&format!("'{}' version: ", version.path.display()));
     }
+
+    if version.candidate > 0 {
+        output.push_str(&version.to_string(&BumpType::Candidate));
+    } else if version.commit.eq("tagged") {
+        output.push_str(&version.to_string(&BumpType::Point(PointType::PATCH)));
+    } else {
+        output.push_str(&version.to_string(&BumpType::Development));
+    }
+
+    println!("{}", output);
 }
 
 fn write_output_file(matches: &ArgMatches, version: &Version) -> Result<(), BumpError> {
