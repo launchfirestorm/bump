@@ -137,7 +137,11 @@ COMMIT={}
         match bump_type {
             BumpType::Point(_) => format!("{}.{}.{}", self.major, self.minor, self.patch),
             BumpType::Candidate => format!("{}.{}.{}-rc{}", self.major, self.minor, self.patch, self.candidate),
-            BumpType::Development => format!("{}.{}.{}+{}", self.major, self.minor, self.patch, self.commit),
+            BumpType::Development => if self.candidate > 0 {
+                format!("{}.{}.{}-rc{}+{}", self.major, self.minor, self.patch, self.candidate, self.commit)
+            } else {
+                format!("{}.{}.{}+{}", self.major, self.minor, self.patch, self.commit)
+            },
         }
     }
 
@@ -328,12 +332,13 @@ fn show(version: &Version, full: bool) {
         output.push_str(&format!("'{}' version: ", version.path.display()));
     }
 
-    if version.candidate > 0 {
-        output.push_str(&version.to_string(&BumpType::Candidate));
-    } else if version.commit.eq("tagged") {
-        output.push_str(&version.to_string(&BumpType::Point(PointType::PATCH)));
-    } else {
+    if !version.commit.eq("tagged") {
         output.push_str(&version.to_string(&BumpType::Development));
+    } else if version.candidate > 0 {
+        output.push_str(&version.to_string(&BumpType::Candidate));
+    } else {
+        // PointType doesn't matter here
+        output.push_str(&version.to_string(&BumpType::Point(PointType::PATCH)));
     }
 
     println!("{}", output);
