@@ -26,23 +26,24 @@ enum BumpError {
 }
 
 enum PointType {
-    MAJOR,
-    MINOR,
-    PATCH,
+    Major,
+    Minor,
+    Patch,
 }
 
 enum BumpType {
     Point(PointType),
-    Candidate,
+    Candidate, // candidate will bump the minor version and append a rc1
+    Release,   // release will drop candidacy and not increment (hence released)
     Development,
 }
 
 impl fmt::Display for BumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BumpError::IoError(err) => write!(f, "I/O error: {}", err),
-            BumpError::ParseError(field) => write!(f, "Invalid {} value", field),
-            BumpError::LogicError(msg) => write!(f, "Error: {}", msg),
+            BumpError::IoError(err) => write!(f, "I/O error: {err}"),
+            BumpError::ParseError(field) => write!(f, "Invalid {field} value"),
+            BumpError::LogicError(msg) => write!(f, "Error: {msg}"),
         }
     }
 }
@@ -60,7 +61,7 @@ impl Version {
             minor: 1,
             patch: 0,
             candidate: 0,
-            commit: String::new(),
+            commit: get_commit_sha().unwrap_or_else(|_| String::from("unknown")),
             path: path.to_path_buf(),
         }
     }
@@ -135,7 +136,7 @@ COMMIT={}
 
     fn to_string(&self, bump_type: &BumpType) -> String {
         match bump_type {
-            BumpType::Point(_) => format!("{}.{}.{}", self.major, self.minor, self.patch),
+            BumpType::Point(_) | BumpType::Release => format!("{}.{}.{}", self.major, self.minor, self.patch),
             BumpType::Candidate => format!("{}.{}.{}-rc{}", self.major, self.minor, self.patch, self.candidate),
             BumpType::Development => if self.candidate > 0 {
                 format!("{}.{}.{}-rc{}+{}", self.major, self.minor, self.patch, self.candidate, self.commit)
@@ -147,26 +148,39 @@ COMMIT={}
 
     fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         match bump_type {
-            BumpType::Point(PointType::MAJOR) => {
+            BumpType::Point(PointType::Major) => {
                 self.major += 1;
                 self.minor = 0;
                 self.patch = 0;
                 self.candidate = 0;
                 self.commit = String::from("tagged");
             }
-            BumpType::Point(PointType::MINOR) => {
+            BumpType::Point(PointType::Minor) => {
                 self.minor += 1;
                 self.patch = 0;
                 self.candidate = 0;
                 self.commit = String::from("tagged");
             }
-            BumpType::Point(PointType::PATCH) => {
+            BumpType::Point(PointType::Patch) => {
                 self.patch += 1;
                 self.candidate = 0;
                 self.commit = String::from("tagged");
             }
             BumpType::Candidate => {
-                self.candidate += 1;
+                if self.candidate > 0 {
+                    self.candidate += 1;
+                } else {
+                    self.minor += 1;
+                    self.candidate = 1; // start candidate at 1
+                }
+                self.commit = String::from("tagged");
+            }
+            BumpType::Release => {
+                // Release does not increment, just drops candidate and tags commit
+                if self.candidate == 0 {
+                    return Err(BumpError::LogicError("Cannot release without a candidate".to_string()));
+                }
+                self.candidate = 0;
                 self.commit = String::from("tagged");
             }
             BumpType::Development => {
@@ -219,7 +233,7 @@ fn get_commit_sha() -> Result<String, BumpError> {
 fn resolve_path(input_path: &str) -> PathBuf {
     let path = Path::new(input_path);
 
-    let resolved_path = if path.is_absolute() {
+    if path.is_absolute() {
         // Absolute path - return as is
         path.to_path_buf()
     } else {
@@ -227,9 +241,7 @@ fn resolve_path(input_path: &str) -> PathBuf {
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(path)
-    };
-
-    resolved_path
+    }
 }
 
 fn ensure_directory_exists(path: &Path) -> Result<(), BumpError> {
@@ -283,8 +295,7 @@ fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
                 path: path.to_path_buf(),
             }),
             _ => {
-                eprintln!("Invalid version format. Please use format like '1.2.3'");
-                Ok(Version::default(path))
+                Err(BumpError::ParseError("Invalid version format".to_string()))
             }
         }
     }
@@ -300,13 +311,15 @@ fn get_version(matches: &ArgMatches) -> Result<Version, BumpError> {
 
 fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
     if matches.get_flag("major") {
-        Ok(BumpType::Point(PointType::MAJOR))
+        Ok(BumpType::Point(PointType::Major))
     } else if matches.get_flag("minor") {
-        Ok(BumpType::Point(PointType::MINOR))
+        Ok(BumpType::Point(PointType::Minor))
     } else if matches.get_flag("patch") {
-        Ok(BumpType::Point(PointType::PATCH))
+        Ok(BumpType::Point(PointType::Patch))
     } else if matches.get_flag("candidate") {
         Ok(BumpType::Candidate)
+    } else if matches.get_flag("release") {
+        Ok(BumpType::Release)
     } else if matches.get_flag("development") {
         Ok(BumpType::Development)
     } else {
@@ -325,36 +338,36 @@ fn initialize() -> Result<Version, BumpError> {
     Ok(version)
 }
 
-fn show(version: &Version, full: bool) {
-    let mut output = String::new();
-
-    if full {
-        output.push_str(&format!("'{}' version: ", version.path.display()));
-    }
+fn print(version: &Version, no_newline: bool) {
+    let output: String;
 
     if !version.commit.eq("tagged") {
-        output.push_str(&version.to_string(&BumpType::Development));
+        output = version.to_string(&BumpType::Development);
     } else if version.candidate > 0 {
-        output.push_str(&version.to_string(&BumpType::Candidate));
+        output = version.to_string(&BumpType::Candidate);
     } else {
         // PointType doesn't matter here
-        output.push_str(&version.to_string(&BumpType::Point(PointType::PATCH)));
+        output = version.to_string(&BumpType::Point(PointType::Patch));
     }
 
-    println!("{}", output);
+    if no_newline {
+        print!("{output}");
+    } else {
+        println!("{output}");
+    }
 }
 
-fn write_output_file(matches: &ArgMatches, version: &Version) -> Result<(), BumpError> {
+fn write_output_file(matches: &ArgMatches, version: &Version, bump_type: &BumpType) -> Result<(), BumpError> {
     if let Some(output_file) = matches.get_one::<String>("output-file") {
-        fs::write(output_file, version.to_header(&BumpType::Point(PointType::PATCH)))
+        fs::write(output_file, version.to_header(bump_type))
             .map_err(BumpError::IoError)?;
-        println!("Header file written to {}", output_file);
+        println!("Header file written to {output_file}");
     }
     Ok(())
 }
 
 fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
-    let mut version = match get_version(&matches) {
+    let mut version = match get_version(matches) {
         Ok(v) => v,
         Err(err) => {
             if let BumpError::IoError(_) = err {
@@ -371,20 +384,25 @@ fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         }
     };
 
-    let bump_type = get_bump_type(&matches)?;
+    let bump_type = get_bump_type(matches)?;
 
     version.bump(&bump_type)?;
 
     match version.to_file() {
-        Ok(()) => println!( "Bumped '{}' to {}", version.path.display(), version.to_string(&bump_type)),
+        Ok(()) => match bump_type {
+                BumpType::Point(_) => println!("Bumped '{}' to point release {}", version.path.display(), version.to_string(&bump_type)),
+                BumpType::Candidate => println!("Bumped '{}' to new candidate {}", version.path.display(), version.to_string(&bump_type)),
+                BumpType::Release => println!("Bumped '{}' drop candidacy to release! {}", version.path.display(), version.to_string(&bump_type)),
+                BumpType::Development => println!("Bumped '{}' to development build {}", version.path.display(), version.to_string(&bump_type)),
+        }
         Err(err) => {
-            eprintln!("Failed to write version file: {}", err);
+            eprintln!("Failed to write version file: {err}");
             return Err(err);
         }
     }
 
-    if let Err(err) = write_output_file(&matches, &version) {
-        eprintln!("Failed to write output file: {}", err);
+    if let Err(err) = write_output_file(matches, &version, &bump_type) {
+        eprintln!("Failed to write output file: {err}");
         return Err(err);
     }
     Ok(())
@@ -393,20 +411,13 @@ fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
 fn main() -> ExitCode {
     let matches = Command::new("bump")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Bump version numbers in a version file")
+        .about("Semantic Version bumping with sane defaults")
         .arg(
             Arg::new("bumpfile")
                 .value_name("PATH")
                 .value_parser(clap::value_parser!(String))
                 .default_value("bumpfile")
                 .help("Path to the version file"),
-        )
-        .arg(
-            Arg::new("print")
-                .long("print")
-                .short('p')
-                .action(clap::ArgAction::SetTrue)
-                .help("Print the project version information"),
         )
         .arg(
             Arg::new("init")
@@ -416,45 +427,60 @@ fn main() -> ExitCode {
                 .exclusive(true),
         )
         .arg(
-            Arg::new("show")
-                .long("show")
-                .short('s')
+            Arg::new("print")
+                .long("print")
                 .action(clap::ArgAction::SetTrue)
-                .help("Show the project version number, useful for CI/CD pipelines"),
+                .exclusive(true)
+                .help("Print version from PATH"),
+        )
+        .arg(
+            Arg::new("print-ci")
+                .long("print-ci")
+                .action(clap::ArgAction::SetTrue)
+                .exclusive(true)
+                .help("Print version from PATH, without a newline"),
         )
         .arg(
             Arg::new("major")
                 .long("major")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with_all(&["minor", "patch", "print"])
+                .conflicts_with_all(["minor", "patch", "print"])
                 .help("Bump the major version"),
         )
         .arg(
             Arg::new("minor")
                 .long("minor")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with_all(&["major", "patch", "print"])
+                .conflicts_with_all(["major", "patch", "print"])
                 .help("Bump the minor version"),
         )
         .arg(
             Arg::new("patch")
                 .long("patch")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with_all(&["major", "minor", "print"])
+                .conflicts_with_all(["major", "minor", "print"])
                 .help("Bump the patch version"),
+        )
+        .arg(
+            Arg::new("release")
+                .long("release")
+                .action(clap::ArgAction::SetTrue)
+                .group("point-release")
+                .conflicts_with_all(["major", "minor", "patch"])
+                .help("Drop candidacy and promote to release")
         )
         .group(
             ArgGroup::new("point-release")
-                .args(&["major", "minor", "patch"])
-                .conflicts_with_all(&["candidate-release", "development-release"])
+                .args(["major", "minor", "patch"])
+                .conflicts_with_all(["candidate-release", "development-release"])
         )
         .arg(
             Arg::new("candidate")
                 .long("candidate")
                 .action(clap::ArgAction::SetTrue)
-                .help("Set the candidate version (rc) number, starts from 1")
+                .help("if in candidacy increments the candidate version, otherwise bump the minor version and set the rc to 1")
                 .group("candidate-release")
-                .conflicts_with_all(&["point-release", "development-release"])
+                .conflicts_with_all(["point-release", "development-release"])
         )
         .arg(
             Arg::new("development")
@@ -462,7 +488,7 @@ fn main() -> ExitCode {
                 .action(clap::ArgAction::SetTrue)
                 .help("Set the meta on semver")
                 .group("development-release")
-                .conflicts_with_all(&["point-release", "candidate-release"])
+                .conflicts_with_all(["point-release", "candidate-release"])
         )
         .arg(
             Arg::new("output-file")
@@ -477,33 +503,31 @@ fn main() -> ExitCode {
 
     if matches.get_flag("init") {
         if let Err(err) = initialize() {
-            eprintln!("Error initializing version file: {}", err);
+            eprintln!("Error initializing version file: {err}");
             return ExitCode::FAILURE;
         }
-    } else if matches.get_flag("show") || matches.get_flag("print") {
+    } else if matches.get_flag("print") || matches.get_flag("print-ci") {
         let version = match get_version(&matches) {
             Ok(v) => v,
             Err(err) => {
-                eprintln!("Error getting version: {}", err);
+                eprintln!("Error getting version: {err}");
                 return ExitCode::FAILURE;
             }
         };
-        show(&version, matches.get_flag("print"));
-        return ExitCode::SUCCESS;
+        print(&version, matches.get_flag("print-ci"));
     } else if matches.get_flag("major")
         || matches.get_flag("minor")
         || matches.get_flag("patch")
         || matches.get_flag("candidate")
+        || matches.get_flag("release")
         || matches.get_flag("development")
     {
         if let Err(err) = apply(&matches) {
-            eprintln!("Error applying version bump: {}", err);
+            eprintln!("{err}");
             return ExitCode::FAILURE;
         }
     } else {
-        eprintln!(
-            "No action specified. Use --init to initialize, --print to print version, or --major/--minor/--patch to bump the version."
-        );
+        eprintln!( "No action specified. Run with --help to see available options." );
     }
     ExitCode::SUCCESS
 }

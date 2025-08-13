@@ -12,7 +12,8 @@ fn test_version_default() {
     assert_eq!(version.minor, 1);
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
-    assert_eq!(version.commit, String::new());
+    // The commit field should be either a valid 7-char commit SHA or "unknown" if git fails
+    assert!(version.commit.len() == 7 || version.commit == "unknown");
     assert_eq!(version.path, path);
 }
 
@@ -147,7 +148,7 @@ fn test_version_to_string_point() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    let version_string = version.to_string(&BumpType::Point(PointType::PATCH));
+    let version_string = version.to_string(&BumpType::Point(PointType::Patch));
     assert_eq!(version_string, "1.2.3");
 }
 
@@ -207,7 +208,7 @@ fn test_version_to_header() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    let header = version.to_header(&BumpType::Point(PointType::PATCH));
+    let header = version.to_header(&BumpType::Point(PointType::Patch));
 
     assert!(header.contains("#define VERSION_MAJOR 1"));
     assert!(header.contains("#define VERSION_MINOR 2"));
@@ -394,7 +395,7 @@ fn test_version_bump_major() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    version.bump(&BumpType::Point(PointType::MAJOR)).unwrap();
+    version.bump(&BumpType::Point(PointType::Major)).unwrap();
 
     assert_eq!(version.major, 2);
     assert_eq!(version.minor, 0);
@@ -414,7 +415,7 @@ fn test_version_bump_minor() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    version.bump(&BumpType::Point(PointType::MINOR)).unwrap();
+    version.bump(&BumpType::Point(PointType::Minor)).unwrap();
 
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 3);
@@ -434,7 +435,7 @@ fn test_version_bump_patch() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    version.bump(&BumpType::Point(PointType::PATCH)).unwrap();
+    version.bump(&BumpType::Point(PointType::Patch)).unwrap();
 
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
@@ -504,31 +505,31 @@ fn test_version_bump_sequence() {
     };
 
     // Bump patch
-    version.bump(&BumpType::Point(PointType::PATCH)).unwrap();
+    version.bump(&BumpType::Point(PointType::Patch)).unwrap();
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 1);
     assert_eq!(version.candidate, 0);
     assert_eq!(version.commit, "tagged");
 
-    // Bump candidate
+    // Bump candidate (should bump minor when candidate is 0)
     version.bump(&BumpType::Candidate).unwrap();
     assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 0);
+    assert_eq!(version.minor, 1); // Minor bumped because candidate was 0
     assert_eq!(version.patch, 1);
     assert_eq!(version.candidate, 1);
     assert_eq!(version.commit, "tagged");
 
     // Bump minor (should reset patch and candidate)
-    version.bump(&BumpType::Point(PointType::MINOR)).unwrap();
+    version.bump(&BumpType::Point(PointType::Minor)).unwrap();
     assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 1);
+    assert_eq!(version.minor, 2); // Was 1, now bumped to 2
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
     assert_eq!(version.commit, "tagged");
 
     // Bump major (should reset minor, patch and candidate)
-    version.bump(&BumpType::Point(PointType::MAJOR)).unwrap();
+    version.bump(&BumpType::Point(PointType::Major)).unwrap();
     assert_eq!(version.major, 2);
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 0);
@@ -539,17 +540,18 @@ fn test_version_bump_sequence() {
 #[test]
 fn test_bump_types() {
     // Test that the enum variants exist and can be constructed
-    let _major = BumpType::Point(PointType::MAJOR);
-    let _minor = BumpType::Point(PointType::MINOR);
-    let _patch = BumpType::Point(PointType::PATCH);
+    let _major = BumpType::Point(PointType::Major);
+    let _minor = BumpType::Point(PointType::Minor);
+    let _patch = BumpType::Point(PointType::Patch);
     let _candidate = BumpType::Candidate;
+    let _release = BumpType::Release;
     let _development = BumpType::Development;
 }
 
 #[test]
 fn test_point_types() {
     // Test that the enum variants exist
-    let _major = PointType::MAJOR;
-    let _minor = PointType::MINOR;
-    let _patch = PointType::PATCH;
+    let _major = PointType::Major;
+    let _minor = PointType::Minor;
+    let _patch = PointType::Patch;
 }
