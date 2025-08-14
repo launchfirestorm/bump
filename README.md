@@ -11,14 +11,12 @@ A simple command-line tool for semantic versioning management.
 
 ## Features
 
-- Bump major, minor, or patch version
+- Bump major, minor, patch, candidate, or development versions
 - Generate C/C++ header files with version definitions
 
 ## Installation
 
-```bash
-cargo install bump
-```
+Go to releases page and grab the latest
 
 ## Build from Source
 
@@ -50,23 +48,36 @@ cargo build --release
 
 The resulting binary is statically linked and can run on virtually any Linux distribution without additional dependencies.
 
-## Usage
+## Semantic
 
-```bash
-# Show version information
-bump --version
+1. MAJOR = api change (similiar to semver spec)
+1. MINOR = cadence release from 6 weeks
+1. PATCH = merged commit onto main
+1. CANDIDATE = manually driven by start of release sprint
+1. RELEASE = coordinator deems worthy, which drops -rc# 
+1. DEVELOPMENT = append `+<7 char git sha>` to version to showcase a new build, helps debugging too
 
-# Bump the major version
-bump --major
+## Workflow
+```
+0.1.1
+bump --candidate
+0.2.0-rc1 
 
-# Bump the minor version
-bump --minor
+flight test bad!
+bump --dev
+0.2.0-rc1+<7 char sha>
 
-# Bump the patch version
-bump --patch
+flight test bad!
+bump --dev
+0.2.0-rc1+<7 char sha>
 
-# Output a C header file, default is "version.h"
-bump --patch --output-file <FILE>
+flight test good...
+bump --candidate
+0.2.0-rc2
+
+===== release coordinater (let's go)
+bump --release
+0.2.0
 ```
 
 ## License

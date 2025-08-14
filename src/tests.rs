@@ -199,6 +199,9 @@ fn test_version_to_string_development_tagged() {
 
 #[test]
 fn test_version_to_header() {
+    let temp_dir = TempDir::new().unwrap();
+    let header_path = temp_dir.path().join("version.h");
+    
     let version = Version {
         major: 1,
         minor: 2,
@@ -208,19 +211,23 @@ fn test_version_to_header() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    let header = version.to_header(&BumpType::Point(PointType::Patch));
+    version.to_header(&BumpType::Point(PointType::Patch), &header_path).unwrap();
 
-    assert!(header.contains("#define VERSION_MAJOR 1"));
-    assert!(header.contains("#define VERSION_MINOR 2"));
-    assert!(header.contains("#define VERSION_PATCH 3"));
-    assert!(header.contains("#define VERSION_CANDIDATE 4"));
-    assert!(header.contains("#define VERSION_COMMIT tagged"));
-    assert!(header.contains("#define VERSION_STRING \"1.2.3\""));
-    assert!(header.contains("https://github.com/launchfirestorm/bump"));
+    let header_content = fs::read_to_string(&header_path).unwrap();
+    assert!(header_content.contains("#define VERSION_MAJOR 1"));
+    assert!(header_content.contains("#define VERSION_MINOR 2"));
+    assert!(header_content.contains("#define VERSION_PATCH 3"));
+    assert!(header_content.contains("#define VERSION_CANDIDATE 4"));
+    assert!(header_content.contains("#define VERSION_COMMIT tagged"));
+    assert!(header_content.contains("#define VERSION_STRING \"1.2.3\""));
+    assert!(header_content.contains("https://github.com/launchfirestorm/bump"));
 }
 
 #[test]
 fn test_version_to_header_development() {
+    let temp_dir = TempDir::new().unwrap();
+    let header_path = temp_dir.path().join("version.h");
+    
     let version = Version {
         major: 1,
         minor: 2,
@@ -230,15 +237,16 @@ fn test_version_to_header_development() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    let header = version.to_header(&BumpType::Development);
+    version.to_header(&BumpType::Development, &header_path).unwrap();
 
-    assert!(header.contains("#define VERSION_MAJOR 1"));
-    assert!(header.contains("#define VERSION_MINOR 2"));
-    assert!(header.contains("#define VERSION_PATCH 3"));
-    assert!(header.contains("#define VERSION_CANDIDATE 0"));
-    assert!(header.contains("#define VERSION_COMMIT abc1234"));
-    assert!(header.contains("#define VERSION_STRING \"1.2.3+abc1234\""));
-    assert!(header.contains("https://github.com/launchfirestorm/bump"));
+    let header_content = fs::read_to_string(&header_path).unwrap();
+    assert!(header_content.contains("#define VERSION_MAJOR 1"));
+    assert!(header_content.contains("#define VERSION_MINOR 2"));
+    assert!(header_content.contains("#define VERSION_PATCH 3"));
+    assert!(header_content.contains("#define VERSION_CANDIDATE 0"));
+    assert!(header_content.contains("#define VERSION_COMMIT abc1234"));
+    assert!(header_content.contains("#define VERSION_STRING \"1.2.3+abc1234\""));
+    assert!(header_content.contains("https://github.com/launchfirestorm/bump"));
 }
 
 #[test]
@@ -459,7 +467,7 @@ fn test_version_bump_candidate() {
 
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 3);
+    assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
     assert_eq!(version.candidate, 5);
     assert_eq!(version.commit, "tagged");
 }
@@ -516,7 +524,7 @@ fn test_version_bump_sequence() {
     version.bump(&BumpType::Candidate).unwrap();
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 1); // Minor bumped because candidate was 0
-    assert_eq!(version.patch, 1);
+    assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
     assert_eq!(version.candidate, 1);
     assert_eq!(version.commit, "tagged");
 
@@ -554,4 +562,74 @@ fn test_point_types() {
     let _major = PointType::Major;
     let _minor = PointType::Minor;
     let _patch = PointType::Patch;
+}
+
+#[test]
+fn test_version_bump_none() {
+    let mut version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "abc1234".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    // Store original values for comparison
+    let original_major = version.major;
+    let original_minor = version.minor;
+    let original_patch = version.patch;
+    let original_candidate = version.candidate;
+    let original_commit = version.commit.clone();
+
+    version.bump(&BumpType::None).unwrap();
+
+    // None should not change any values
+    assert_eq!(version.major, original_major);
+    assert_eq!(version.minor, original_minor);
+    assert_eq!(version.patch, original_patch);
+    assert_eq!(version.candidate, original_candidate);
+    assert_eq!(version.commit, original_commit);
+}
+
+#[test]
+fn test_version_to_string_none_tagged_with_candidate() {
+    let version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "tagged".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    assert_eq!(version.to_string(&BumpType::None), "1.2.3-rc4");
+}
+
+#[test]
+fn test_version_to_string_none_tagged_without_candidate() {
+    let version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 0,
+        commit: "tagged".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    assert_eq!(version.to_string(&BumpType::None), "1.2.3");
+}
+
+#[test]
+fn test_version_to_string_none_untagged() {
+    let version = Version {
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 4,
+        commit: "abc1234".to_string(),
+        path: PathBuf::from("test.bumpfile"),
+    };
+
+    assert_eq!(version.to_string(&BumpType::None), "1.2.3+abc1234");
 }
