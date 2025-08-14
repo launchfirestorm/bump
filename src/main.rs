@@ -341,8 +341,15 @@ fn initialize(bumpfile: &str) -> Result<Version, BumpError> {
     Ok(version)
 }
 
-fn print(version: &Version, no_newline: bool) {
+fn print(version: &Version, matches: &ArgMatches) {
     let output: String;
+    let no_newline = matches.get_flag("print-ci");
+    let cmake = matches.get_flag("print-cmake");
+
+    if cmake {
+        print!("{}", version.to_string(&BumpType::Point(PointType::Patch)));
+        return;
+    } 
 
     if !version.commit.eq("tagged") {
         output = version.to_string(&BumpType::Development);
@@ -430,15 +437,22 @@ fn main() -> ExitCode {
             Arg::new("print")
                 .long("print")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with("print-ci")
+                .group("print-group")
                 .help("Print version from PATH"),
         )
         .arg(
             Arg::new("print-ci")
                 .long("print-ci")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with("print")
+                .group("print-group")
                 .help("Print version from PATH, without a newline"),
+        )
+        .arg(
+            Arg::new("print-cmake")
+                .long("print-cmake")
+                .action(clap::ArgAction::SetTrue)
+                .group("print-group")
+                .help("Print version from PATH, cmake compatible format"),
         )
         .arg(
             Arg::new("major")
@@ -472,7 +486,7 @@ fn main() -> ExitCode {
         .group(
             ArgGroup::new("point-release")
                 .args(["major", "minor", "patch"])
-                .conflicts_with_all(["candidate-release", "development-release"])
+                .conflicts_with_all(["candidate-release", "development-release", "print-group"])
         )
         .arg(
             Arg::new("candidate")
@@ -480,7 +494,7 @@ fn main() -> ExitCode {
                 .action(clap::ArgAction::SetTrue)
                 .help("if in candidacy increments the candidate version, otherwise bump the minor version and set the rc to 1")
                 .group("candidate-release")
-                .conflicts_with_all(["point-release", "development-release"])
+                .conflicts_with_all(["point-release", "development-release", "print-group"])
         )
         .arg(
             Arg::new("development")
@@ -488,7 +502,7 @@ fn main() -> ExitCode {
                 .action(clap::ArgAction::SetTrue)
                 .help("Set the meta on semver")
                 .group("development-release")
-                .conflicts_with_all(["point-release", "candidate-release"])
+                .conflicts_with_all(["point-release", "candidate-release", "print-group"])
         )
         .arg(
             Arg::new("output-file")
@@ -507,7 +521,7 @@ fn main() -> ExitCode {
             eprintln!("Error initializing version file: {err}");
             return ExitCode::FAILURE;
         }
-    } else if matches.get_flag("print") || matches.get_flag("print-ci") {
+    } else if matches.contains_id("print-group") {
         let version = match get_version(&matches) {
             Ok(v) => v,
             Err(err) => {
@@ -515,13 +529,10 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        print(&version, matches.get_flag("print-ci"));
-    } else if matches.get_flag("major")
-        || matches.get_flag("minor")
-        || matches.get_flag("patch")
-        || matches.get_flag("candidate")
-        || matches.get_flag("release")
-        || matches.get_flag("development")
+        print(&version, &matches);
+    } else if matches.contains_id("point-release")
+        || matches.contains_id("candidate-release")
+        || matches.contains_id("development-release")
     {
         if let Err(err) = apply(&matches) {
             eprintln!("{err}");
