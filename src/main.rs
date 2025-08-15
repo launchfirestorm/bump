@@ -298,10 +298,20 @@ fn initialize(bumpfile: &str) -> Result<(), BumpError> {
     let filepath = resolve_path(bumpfile);
     ensure_directory_exists(&filepath)?;
 
-    if let Ok(git_tag) = get_git_tag() {
-        println!("Found git tag: {}", git_tag);
-        let git_version = Version::from_string(&git_tag, &filepath)?;
-        git_version.to_file()?;
+    // prompt for tag or manual
+    let mut use_git_tag = String::new();
+    println!("Use git tag for versioning? (y/n): ");
+    io::stdin()
+        .read_line(&mut use_git_tag)
+        .map_err(BumpError::IoError)?;
+    let use_git_tag = use_git_tag.trim().to_lowercase();
+
+    if use_git_tag == "y" {
+        if let Ok(git_tag) = get_git_tag() {
+            println!("Found git tag: {}", git_tag);
+            let git_version = Version::from_string(&git_tag, &filepath)?;
+            git_version.to_file()?;
+        }
     } else {
         let version = prompt_for_version(&filepath)?;
         version.to_file()?;
@@ -401,30 +411,21 @@ fn get_git_commit_sha() -> Result<String, BumpError> {
 }
 
 fn generate(matches: &ArgMatches) -> Result<(), BumpError> {
-    // Check if we're in a git repository
     if !is_git_repository() {
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let bumpfile_path = Path::new(bumpfile);
-
-    let bumpfile_version = Version::from_file(bumpfile_path)?;
+    let version = Version::from_file(Path::new(bumpfile))?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
 
-    let git_version = Version::from_string(&get_git_tag()?, bumpfile_path)?;
+    let tagged = get_git_tag().is_ok();
 
-    if bumpfile_version.major != git_version.major ||
-       bumpfile_version.minor != git_version.minor ||
-       bumpfile_version.patch != git_version.patch ||
-       bumpfile_version.candidate != git_version.candidate {
-        return Err(BumpError::LogicError("Bumpfile version does not match git tag".to_string()));
-    }
-
-    let version_string = if git_version.candidate > 0 {
-        format!("{}.{}.{}-rc{}+{}", git_version.major, git_version.minor, git_version.patch, git_version.candidate, get_git_commit_sha()?)
-    } else {
-        format!("{}.{}.{}+{}", git_version.major, git_version.minor, git_version.patch, get_git_commit_sha()?)
+    let version_string = match (tagged, version.candidate) {
+        (true, 0) => format!("{}.{}.{}", version.major, version.minor, version.patch),
+        (true, _) => format!("{}.{}.{}-rc{}", version.major, version.minor, version.patch, version.candidate),
+        (false, 0) => format!("{}.{}.{}+{}", version.major, version.minor, version.patch, get_git_commit_sha()?),
+        (false, _) => format!("{}.{}.{}-rc{}+{}", version.major, version.minor, version.patch, version.candidate, get_git_commit_sha()?),
     };
 
     for output_file in output_files {
@@ -436,7 +437,7 @@ fn generate(matches: &ArgMatches) -> Result<(), BumpError> {
                 .map_err(|e| BumpError::IoError(e))?;
         }
 
-        bumpfile_version.to_header(&version_string, output_path)?;
+        version.to_header(&version_string, output_path)?;
     }
 
     Ok(())
