@@ -560,8 +560,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            // Handle the legacy flag-based commands
-            if matches.contains_id("print") {
+            if matches.contains_id("print-group") {
                 let version = match get_version(&matches) {
                     Ok(v) => v,
                     Err(err) => {
