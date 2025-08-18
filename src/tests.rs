@@ -194,7 +194,7 @@ fn test_version_to_header() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    version.to_header("1.2.3-rc4", &header_path).unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, "1.2.3-rc4", &header_path).unwrap();
 
     let header_content = fs::read_to_string(&header_path).unwrap();
     assert!(header_content.contains("#define VERSION_MAJOR 1"));

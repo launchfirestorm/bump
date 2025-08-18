@@ -1,6 +1,6 @@
 # Bump
 
-A simple command-line tool for semantic versioning management with git-aware header generation.
+A simple command-line tool for semantic versioning management with multi-language code generation and git-aware version detection.
 
 ```
  ____  __  __  __  __  ____ 
@@ -12,9 +12,9 @@ A simple command-line tool for semantic versioning management with git-aware hea
 ## Features
 
 - Bump major, minor, patch, candidate, or release versions
-- Generate C/C++ header files with git-aware version detection
+- Generate version files for multiple programming languages (C, Go, Java, C#)
 - Automatic SHA appending for untagged commits
-- Support for multiple header file generation from a single bumpfile
+- Support for multiple output files from a single bumpfile
 - Git repository integration for smart version detection
 
 ## Installation
@@ -70,8 +70,11 @@ bump --major|--minor|--patch|--candidate  # Updates bumpfile
 git commit -m "Bump to version X.Y.Z"
 git tag vX.Y.Z
 
-# Generate header files (detects git tag, no SHA appended)
-bump gen bumpfile version.h include/version.h
+# Generate version files (detects git tag, no SHA appended)
+bump gen --lang=c bumpfile version.h include/version.h
+bump gen --lang=go bumpfile version.go
+bump gen --lang=java bumpfile Version.java
+bump gen --lang=csharp bumpfile Version.cs
 
 # ..build code 
 ```
@@ -80,8 +83,8 @@ bump gen bumpfile version.h include/version.h
 For development builds (untagged commits):
 
 ```bash
-# Generate header files (detects untagged commit, appends SHA)
-bump gen bumpfile version.h include/version.h
+# Generate version files (detects untagged commit, appends SHA)
+bump gen --lang=c bumpfile version.h include/version.h
 
 # ..build code 
 ```
@@ -97,13 +100,13 @@ bump --candidate
 0.2.0-rc1
 git commit && git tag v$(bump --print-ci)  # outputs 0.2.0-rc1
 
-# Generate header for tagged candidate
-bump gen bumpfile version.h
+# Generate version file for tagged candidate
+bump gen --lang=c bumpfile version.h
 # Generates: #define VERSION_STRING "0.2.0-rc1"
 
 # Continue development (untagged)
 git commit -m "Fix bug"
-bump gen bumpfile version.h  
+bump gen --lang=c bumpfile version.h  
 # Generates: #define VERSION_STRING "0.2.0-rc1+a1b2c3d"
 
 # Ready for release
@@ -111,8 +114,8 @@ bump --release
 0.2.0
 git commit && git tag v$(bump --print-ci)  # outputs 0.2.0
 
-# Generate header for final release
-bump gen bumpfile version.h
+# Generate version file for final release
+bump gen --lang=c bumpfile version.h
 # Generates: #define VERSION_STRING "0.2.0"
 ```
 
@@ -135,15 +138,72 @@ bump --release   # 1.1.0-rc1 -> 1.1.0
 bump --print
 ```
 
-### Header Generation
+### Code Generation
 
 ```bash
-# Generate header files with git-aware versioning
-bump gen <bumpfile> <output_file>...
+# Generate version files with git-aware versioning
+bump gen --lang=<LANG> <bumpfile> <output_file>...
+
+# Supported languages: c, go, java, csharp
 
 # Examples:
-bump gen bumpfile version.h                    # Single header
-bump gen bumpfile version.h include/version.h  # Multiple headers
+bump gen --lang=c bumpfile version.h                    # C header file
+bump gen --lang=c bumpfile version.h include/version.h  # Multiple C headers
+bump gen --lang=go bumpfile version.go                  # Go source file
+bump gen --lang=java bumpfile Version.java              # Java class file
+bump gen --lang=csharp bumpfile Version.cs              # C# class file
+```
+
+## Generated Code Examples
+
+### C Header (`version.h`)
+```c
+#ifndef BUMP_VERSION_H
+#define BUMP_VERSION_H
+
+#define VERSION_MAJOR 1
+#define VERSION_MINOR 2  
+#define VERSION_PATCH 3
+#define VERSION_CANDIDATE 0
+#define VERSION_STRING "1.2.3"
+
+#endif /* BUMP_VERSION_H */
+```
+
+### Go Source (`version.go`)
+```go
+package version
+
+const (
+	MAJOR     = 1
+	MINOR     = 2
+	PATCH     = 3
+	CANDIDATE = 0
+	STRING    = "1.2.3"
+)
+```
+
+### Java Class (`Version.java`)
+```java
+public class Version {
+    public static final int MAJOR = 1;
+    public static final int MINOR = 2;
+    public static final int PATCH = 3;
+    public static final int CANDIDATE = 0;
+    public static final String STRING = "1.2.3";
+}
+```
+
+### C# Class (`Version.cs`)
+```csharp
+public static class Version
+{
+    public const int MAJOR = 1;
+    public const int MINOR = 2;
+    public const int PATCH = 3;
+    public const int CANDIDATE = 0;
+    public const string STRING = "1.2.3";
+}
 ```
 
 The `gen` command automatically:
@@ -152,13 +212,15 @@ The `gen` command automatically:
 - For **tagged commits**: generates clean version (e.g., "1.2.3" or "1.2.3-rc1")
 - For **untagged commits**: appends commit SHA (e.g., "1.2.3+a1b2c3d" or "1.2.3-rc1+a1b2c3d")
 - Creates directories as needed (mkdir -p behavior)
+- Generates language-appropriate syntax and conventions
 
 ## Key Changes in v3.0.0
 
 - **Removed**: `--dev` flag and commit persistence in bumpfile
 - **Added**: `gen` subcommand with git integration
+- **Added**: Multi-language support (C, Go, Java, C#)
 - **Enhanced**: Smart version detection based on git tags
-- **Improved**: Multiple header file generation support
+- **Improved**: Multiple output file generation support
 - **Required**: Git repository for `gen` command (fails if not in git repo)
 
 ## License
