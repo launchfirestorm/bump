@@ -1,6 +1,6 @@
-use std::path::Path;
+use crate::{BumpError, Version};
 use std::fs;
-use crate::{Version, BumpError};
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Language {
@@ -57,7 +57,11 @@ fn c_output(version: &Version, path: &Path, version_str: &str) -> Result<(), Bum
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
-    println!("{} written to {}", Language::C.file_description(), path.display());
+    println!(
+        "{} written to {}",
+        Language::C.file_description(),
+        path.display()
+    );
     Ok(())
 }
 
@@ -85,7 +89,11 @@ const (
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
-    println!("{} written to {}", Language::Go.file_description(), path.display());
+    println!(
+        "{} written to {}",
+        Language::Go.file_description(),
+        path.display()
+    );
     Ok(())
 }
 
@@ -113,7 +121,11 @@ public class Version {{
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
-    println!("{} written to {}", Language::Java.file_description(), path.display());
+    println!(
+        "{} written to {}",
+        Language::Java.file_description(),
+        path.display()
+    );
     Ok(())
 }
 
@@ -141,12 +153,20 @@ public static class Version {{
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
-    println!("{} written to {}", Language::CSharp.file_description(), path.display());
+    println!(
+        "{} written to {}",
+        Language::CSharp.file_description(),
+        path.display()
+    );
     Ok(())
 }
 
-
-pub fn output_file(lang: &Language, version: &Version, version_str: &str, path: &Path) -> Result<(), BumpError> {
+pub fn output_file(
+    lang: &Language,
+    version: &Version,
+    version_str: &str,
+    path: &Path,
+) -> Result<(), BumpError> {
     match lang {
         Language::C => c_output(version, path, version_str),
         Language::Go => go_output(version, path, version_str),

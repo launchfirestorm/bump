@@ -19,7 +19,23 @@ A simple command-line tool for semantic versioning management with multi-languag
 
 ## Installation
 
-Go to releases page and grab the latest
+### Quick Install (Linux)
+
+Install bump with a single command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh | bash
+```
+
+This will:
+- Detect your architecture (x86_64 or arm64)
+- Download the appropriate binary from the latest release
+- Install to `/usr/local/bin` (if writable) or `~/.local/bin`
+- Verify the installation
+
+### Manual Installation
+
+Go to the [releases page](https://github.com/launchfirestorm/bump/releases) and grab the latest binary for your platform.
 
 ## Build from Source
 

@@ -185,7 +185,7 @@ fn test_version_to_string_candidate() {
 fn test_version_to_header() {
     let temp_dir = TempDir::new().unwrap();
     let header_path = temp_dir.path().join("version.h");
-    
+
     let version = Version {
         major: 1,
         minor: 2,
@@ -194,7 +194,13 @@ fn test_version_to_header() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    crate::lang::output_file(&crate::lang::Language::C, &version, "1.2.3-rc4", &header_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        "1.2.3-rc4",
+        &header_path,
+    )
+    .unwrap();
 
     let header_content = fs::read_to_string(&header_path).unwrap();
     assert!(header_content.contains("#define VERSION_MAJOR 1"));
@@ -242,15 +248,15 @@ fn test_bump_error_display() {
     let io_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
     let bump_error = BumpError::IoError(io_error);
 
-    let display = format!("{}", bump_error);
+    let display = format!("{bump_error}");
     assert!(display.contains("I/O error"));
 
     let parse_error = BumpError::ParseError("MAJOR".to_string());
-    let display = format!("{}", parse_error);
+    let display = format!("{parse_error}");
     assert!(display.contains("Invalid MAJOR value"));
 
     let logic_error = BumpError::LogicError("Test error".to_string());
-    let display = format!("{}", logic_error);
+    let display = format!("{logic_error}");
     assert!(display.contains("Error: Test error"));
 }
 
@@ -288,7 +294,7 @@ fn test_version_round_trip() {
     assert_eq!(original_version.minor, read_version.minor);
     assert_eq!(original_version.patch, read_version.patch);
     assert_eq!(original_version.candidate, read_version.candidate);
-    
+
     assert_eq!(original_version.path, read_version.path);
 }
 
@@ -306,7 +312,6 @@ fn test_version_file_with_comments() {
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 3);
     assert_eq!(version.candidate, 0);
-    
 }
 
 #[test]
@@ -323,20 +328,26 @@ fn test_version_file_with_whitespace() {
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 3);
     assert_eq!(version.candidate, 0);
-    
 }
 
 #[test]
 fn test_get_git_commit_sha() {
     match get_git_commit_sha() {
         Ok(commit_sha) => {
-            println!("Commit SHA: {}", commit_sha);
+            println!("Commit SHA: {commit_sha}");
             assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
-            assert_eq!(commit_sha.len(), 7, "Commit SHA should be 7 characters long");
-            assert!(commit_sha.chars().all(|c| c.is_ascii_hexdigit()), "Commit SHA should only contain hex digits");
-        },
+            assert_eq!(
+                commit_sha.len(),
+                7,
+                "Commit SHA should be 7 characters long"
+            );
+            assert!(
+                commit_sha.chars().all(|c| c.is_ascii_hexdigit()),
+                "Commit SHA should only contain hex digits"
+            );
+        }
         Err(e) => {
-            println!("Git command failed (expected in some environments): {}", e);
+            println!("Git command failed (expected in some environments): {e}");
             // Don't fail the test if we're not in a git repo or git isn't available
             // This makes the test more robust for CI/CD environments
         }
@@ -363,7 +374,6 @@ fn test_version_bump_major() {
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
-    
 }
 
 #[test]
@@ -382,7 +392,6 @@ fn test_version_bump_minor() {
     assert_eq!(version.minor, 3);
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
-    
 }
 
 #[test]
@@ -401,7 +410,6 @@ fn test_version_bump_patch() {
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 4);
     assert_eq!(version.candidate, 0);
-    
 }
 
 #[test]
@@ -420,7 +428,6 @@ fn test_version_bump_candidate() {
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
     assert_eq!(version.candidate, 5);
-    
 }
 
 #[test]
@@ -457,7 +464,6 @@ fn test_version_bump_sequence() {
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 1);
     assert_eq!(version.candidate, 0);
-    
 
     // Bump candidate (should bump minor when candidate is 0)
     version.bump(&BumpType::Candidate).unwrap();
@@ -465,7 +471,6 @@ fn test_version_bump_sequence() {
     assert_eq!(version.minor, 1); // Minor bumped because candidate was 0
     assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
     assert_eq!(version.candidate, 1);
-    
 
     // Bump minor (should reset patch and candidate)
     version.bump(&BumpType::Point(PointType::Minor)).unwrap();
@@ -473,7 +478,6 @@ fn test_version_bump_sequence() {
     assert_eq!(version.minor, 2); // Was 1, now bumped to 2
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
-    
 
     // Bump major (should reset minor, patch and candidate)
     version.bump(&BumpType::Point(PointType::Major)).unwrap();
@@ -481,7 +485,6 @@ fn test_version_bump_sequence() {
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
-    
 }
 
 #[test]
@@ -546,7 +549,10 @@ fn test_version_to_string_none_tagged_without_candidate() {
         path: PathBuf::from("test.bumpfile"),
     };
 
-    assert_eq!(version.to_string(&BumpType::Point(PointType::Patch)), "1.2.3");
+    assert_eq!(
+        version.to_string(&BumpType::Point(PointType::Patch)),
+        "1.2.3"
+    );
 }
 
 #[test]
@@ -560,5 +566,8 @@ fn test_version_to_string_point_with_candidate() {
     };
 
     // Point release ignores candidate and shows just major.minor.patch
-    assert_eq!(version.to_string(&BumpType::Point(PointType::Patch)), "1.2.3");
+    assert_eq!(
+        version.to_string(&BumpType::Point(PointType::Patch)),
+        "1.2.3"
+    );
 }
