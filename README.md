@@ -24,7 +24,7 @@ A simple command-line tool for semantic versioning management with multi-languag
 Install bump with a single command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh | bash
+curl -sSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github.v3.raw" https://api.github.com/repos/launchfirestorm/bump/contents/install.sh | bash
 ```
 
 This will:
