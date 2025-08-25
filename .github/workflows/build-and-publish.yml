@@ -72,6 +72,17 @@ jobs:
       run: cargo test --release --target ${{ matrix.target }}
 
     - name: Prepare binary for upload
+      if: matrix.use_container == true
+      shell: sh
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cp target/${{ matrix.target }}/release/bump.exe bump-${{ matrix.name_suffix }}.exe
+        else
+          cp target/${{ matrix.target }}/release/bump bump-${{ matrix.name_suffix }}
+        fi
+
+    - name: Prepare binary for upload
+      if: matrix.use_container == false
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
