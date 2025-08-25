@@ -44,11 +44,11 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             name_suffix: macos-arm64
-            cross_compile: false
+            cross_compile: true
             use_container: false
 
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.use_container && 'rust:alpine' || null }}
+    container: ${{ matrix.use_container == true && 'rust:alpine' || '' }}
     
     steps:
     - uses: actions/checkout@v4
@@ -59,21 +59,10 @@ jobs:
       with:
         targets: ${{ matrix.target }}
 
-    - name: Setup Alpine environment and cross-compilation (Linux builds)
+    - name: Add target
       if: matrix.use_container == true
       run: |
-        # Install necessary packages for cross-compilation
-        if [ "${{ matrix.cross_compile }}" = "true" ]; then
-          apk add --no-cache binutils-aarch64
-        fi
-        # Add the target
         rustup target add ${{ matrix.target }}
-
-    - name: Install cross-compilation dependencies (Windows ARM64)
-      if: matrix.os == 'windows-latest' && matrix.cross_compile
-      run: |
-        # Windows ARM64 cross-compilation is handled by rustc itself
-        echo "Windows ARM64 cross-compilation setup complete"
 
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
@@ -85,7 +74,7 @@ jobs:
     - name: Prepare binary for upload
       shell: bash
       run: |
-        if [[ "${{ matrix.os }}" == windows-* ]]; then
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
           cp target/${{ matrix.target }}/release/bump.exe bump-${{ matrix.name_suffix }}.exe
         else
           cp target/${{ matrix.target }}/release/bump bump-${{ matrix.name_suffix }}
