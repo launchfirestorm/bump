@@ -136,6 +136,7 @@ fn test_version_to_file() {
     let file_path = temp_dir.path().join("version.bumpfile");
 
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -156,6 +157,7 @@ fn test_version_to_file() {
 #[test]
 fn test_version_to_string_point() {
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -164,12 +166,13 @@ fn test_version_to_string_point() {
     };
 
     let version_string = version.to_string(&BumpType::Point(PointType::Patch));
-    assert_eq!(version_string, "1.2.3");
+    assert_eq!(version_string, "v1.2.3");
 }
 
 #[test]
 fn test_version_to_string_candidate() {
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -178,7 +181,7 @@ fn test_version_to_string_candidate() {
     };
 
     let version_string = version.to_string(&BumpType::Candidate);
-    assert_eq!(version_string, "1.2.3-rc4");
+    assert_eq!(version_string, "v1.2.3-rc4");
 }
 
 #[test]
@@ -187,6 +190,7 @@ fn test_version_to_header() {
     let header_path = temp_dir.path().join("version.h");
 
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -277,6 +281,7 @@ fn test_version_round_trip() {
     let file_path = temp_dir.path().join("version.bumpfile");
 
     let original_version = Version {
+        prefix: "v".to_string(),
         major: 5,
         minor: 10,
         patch: 15,
@@ -361,6 +366,7 @@ fn test_get_git_commit_sha() {
 #[test]
 fn test_version_bump_major() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -370,6 +376,7 @@ fn test_version_bump_major() {
 
     version.bump(&BumpType::Point(PointType::Major)).unwrap();
 
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 2);
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 0);
@@ -379,6 +386,7 @@ fn test_version_bump_major() {
 #[test]
 fn test_version_bump_minor() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -388,6 +396,7 @@ fn test_version_bump_minor() {
 
     version.bump(&BumpType::Point(PointType::Minor)).unwrap();
 
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 3);
     assert_eq!(version.patch, 0);
@@ -397,6 +406,7 @@ fn test_version_bump_minor() {
 #[test]
 fn test_version_bump_patch() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -406,6 +416,7 @@ fn test_version_bump_patch() {
 
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
 
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 4);
@@ -415,6 +426,7 @@ fn test_version_bump_patch() {
 #[test]
 fn test_version_bump_candidate() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -424,6 +436,7 @@ fn test_version_bump_candidate() {
 
     version.bump(&BumpType::Candidate).unwrap();
 
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
@@ -433,6 +446,7 @@ fn test_version_bump_candidate() {
 #[test]
 fn test_version_bump_candidate_existing_value() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -442,6 +456,7 @@ fn test_version_bump_candidate_existing_value() {
 
     // Test candidate bump - should increment candidate
     version.bump(&BumpType::Candidate).unwrap();
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1); // Unchanged
     assert_eq!(version.minor, 2); // Unchanged  
     assert_eq!(version.patch, 0); // Reset to 0
@@ -451,6 +466,7 @@ fn test_version_bump_candidate_existing_value() {
 #[test]
 fn test_version_bump_sequence() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 0,
         patch: 0,
@@ -460,6 +476,7 @@ fn test_version_bump_sequence() {
 
     // Bump patch
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 0);
     assert_eq!(version.patch, 1);
@@ -467,6 +484,7 @@ fn test_version_bump_sequence() {
 
     // Bump candidate (should bump minor when candidate is 0)
     version.bump(&BumpType::Candidate).unwrap();
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 1); // Minor bumped because candidate was 0
     assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
@@ -509,6 +527,7 @@ fn test_point_types() {
 #[test]
 fn test_version_bump_patch_with_candidate() {
     let mut version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -519,6 +538,7 @@ fn test_version_bump_patch_with_candidate() {
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
 
     // Patch bump should increment patch and reset candidate
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1); // Unchanged
     assert_eq!(version.minor, 2); // Unchanged
     assert_eq!(version.patch, 4); // Incremented
@@ -528,6 +548,7 @@ fn test_version_bump_patch_with_candidate() {
 #[test]
 fn test_version_to_string_candidate_with_value() {
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -536,12 +557,13 @@ fn test_version_to_string_candidate_with_value() {
     };
 
     // Candidate should show the -rc suffix
-    assert_eq!(version.to_string(&BumpType::Candidate), "1.2.3-rc4");
+    assert_eq!(version.to_string(&BumpType::Candidate), "v1.2.3-rc4");
 }
 
 #[test]
 fn test_version_to_string_none_tagged_without_candidate() {
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -551,13 +573,14 @@ fn test_version_to_string_none_tagged_without_candidate() {
 
     assert_eq!(
         version.to_string(&BumpType::Point(PointType::Patch)),
-        "1.2.3"
+        "v1.2.3"
     );
 }
 
 #[test]
 fn test_version_to_string_point_with_candidate() {
     let version = Version {
+        prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -568,6 +591,6 @@ fn test_version_to_string_point_with_candidate() {
     // Point release ignores candidate and shows just major.minor.patch
     assert_eq!(
         version.to_string(&BumpType::Point(PointType::Patch)),
-        "1.2.3"
+        "v1.2.3"
     );
 }

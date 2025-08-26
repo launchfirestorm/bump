@@ -14,6 +14,7 @@ mod tests;
 
 #[derive(Debug)]
 struct Version {
+    pub prefix: String,
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
@@ -36,9 +37,11 @@ enum PointType {
 }
 
 enum BumpType {
+    Prefix(String),
     Point(PointType),
     Candidate, // candidate will bump the minor version and append a rc1
     Release,   // release will drop candidacy and not increment (hence released)
+    Base,
 }
 
 impl fmt::Display for BumpError {
@@ -61,6 +64,7 @@ impl From<io::Error> for BumpError {
 impl Version {
     fn default(path: &Path) -> Self {
         Version {
+            prefix: "v".to_string(),
             major: 0,
             minor: 1,
             patch: 0,
@@ -76,6 +80,7 @@ impl Version {
         let mut minor = 0;
         let mut patch = 0;
         let mut candidate = 0;
+        let mut prefix = "v".to_string(); // default prefix
 
         for line in content.lines() {
             if let Some(value) = line.strip_prefix("MAJOR=") {
@@ -98,9 +103,12 @@ impl Version {
                     .trim()
                     .parse()
                     .map_err(|_| BumpError::ParseError("CANDIDATE".to_string()))?;
+            } else if let Some(value) = line.strip_prefix("PREFIX=") {
+                prefix = value.trim().to_string();
             }
         }
         Ok(Version {
+            prefix,
             major,
             minor,
             patch,
@@ -119,12 +127,13 @@ impl Version {
 #
 # https://github.com/launchfirestorm/bump
 
+PREFIX={}
 MAJOR={}
 MINOR={}
 PATCH={}
 CANDIDATE={}
 "#,
-            self.major, self.minor, self.patch, self.candidate
+            self.prefix, self.major, self.minor, self.patch, self.candidate
         );
         match fs::write(self.path.as_path(), content) {
             Ok(_) => Ok(()),
@@ -134,24 +143,32 @@ CANDIDATE={}
 
     fn to_string(&self, bump_type: &BumpType) -> String {
         match bump_type {
-            BumpType::Point(_) | BumpType::Release => {
-                format!("{}.{}.{}", self.major, self.minor, self.patch)
+            BumpType::Prefix(_) | BumpType::Point(_) | BumpType::Release => {
+                format!(
+                    "{}{}.{}.{}",
+                    self.prefix, self.major, self.minor, self.patch
+                )
             }
             BumpType::Candidate => format!(
-                "{}.{}.{}-rc{}",
-                self.major, self.minor, self.patch, self.candidate
+                "{}{}.{}.{}-rc{}",
+                self.prefix, self.major, self.minor, self.patch, self.candidate
             ),
+            // Useful for cmake and other tools
+            BumpType::Base => format!("{}.{}.{}", self.major, self.minor, self.patch),
         }
     }
 
     fn from_string(version_str: &str, path: &Path) -> Result<Self, BumpError> {
         let re =
-            Regex::new(r"(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-rc(?P<candidate>\d+))?")
+            Regex::new(r"^(?P<prefix>[a-zA-Z]*)(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-rc(?P<candidate>\d+))?")
                 .unwrap();
         let caps = re
             .captures(version_str)
             .ok_or_else(|| BumpError::ParseError("Invalid version format".to_string()))?;
 
+        let prefix = caps
+            .name("prefix")
+            .map_or("v".to_string(), |m| m.as_str().to_string());
         let major = caps["major"]
             .parse()
             .map_err(|_| BumpError::ParseError("MAJOR".to_string()))?;
@@ -168,6 +185,7 @@ CANDIDATE={}
         })?;
 
         Ok(Version {
+            prefix,
             major,
             minor,
             patch,
@@ -178,6 +196,9 @@ CANDIDATE={}
 
     fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         match bump_type {
+            BumpType::Prefix(prefix) => {
+                self.prefix = prefix.clone();
+            }
             BumpType::Point(PointType::Major) => {
                 self.major += 1;
                 self.minor = 0;
@@ -211,6 +232,7 @@ CANDIDATE={}
                 }
                 self.candidate = 0;
             }
+            BumpType::Base => { /* won't happen */ }
         }
         Ok(())
     }
@@ -256,6 +278,7 @@ fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
 
         match version_parts {
             Ok(parts) if parts.len() == 3 => Ok(Version {
+                prefix: "v".to_string(),
                 major: parts[0],
                 minor: parts[1],
                 patch: parts[2],
@@ -276,7 +299,11 @@ fn get_version(matches: &ArgMatches) -> Result<Version, BumpError> {
 }
 
 fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
-    if matches.get_flag("major") {
+    if matches.get_one::<String>("prefix").is_some() {
+        Ok(BumpType::Prefix(
+            matches.get_one::<String>("prefix").unwrap().to_string(),
+        ))
+    } else if matches.get_flag("major") {
         Ok(BumpType::Point(PointType::Major))
     } else if matches.get_flag("minor") {
         Ok(BumpType::Point(PointType::Minor))
@@ -293,7 +320,7 @@ fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
     }
 }
 
-fn initialize(bumpfile: &str) -> Result<(), BumpError> {
+fn initialize(bumpfile: &str, prefix: &str) -> Result<(), BumpError> {
     let filepath = resolve_path(bumpfile);
     ensure_directory_exists(&filepath)?;
 
@@ -308,11 +335,13 @@ fn initialize(bumpfile: &str) -> Result<(), BumpError> {
     if use_git_tag == "y" {
         if let Ok(git_tag) = get_git_tag() {
             println!("Found git tag: {git_tag}");
-            let git_version = Version::from_string(&git_tag, &filepath)?;
+            let mut git_version = Version::from_string(&git_tag, &filepath)?;
+            git_version.prefix = prefix.to_string(); // Override prefix from CLI
             git_version.to_file()?;
         }
     } else {
-        let version = prompt_for_version(&filepath)?;
+        let mut version = prompt_for_version(&filepath)?;
+        version.prefix = prefix.to_string(); // Override prefix from CLI
         version.to_file()?;
     }
 
@@ -322,7 +351,7 @@ fn initialize(bumpfile: &str) -> Result<(), BumpError> {
 
 fn print(version: &Version, base: bool) {
     let bump_type = if base {
-        BumpType::Point(PointType::Patch)
+        BumpType::Base
     } else if version.candidate > 0 {
         BumpType::Candidate
     } else {
@@ -356,6 +385,11 @@ fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
 
     match version.to_file() {
         Ok(()) => match bump_type {
+            BumpType::Prefix(new_prefix) => println!(
+                "Updated prefix of '{}' to '{}'",
+                version.path.display(),
+                new_prefix
+            ),
             BumpType::Point(_) => println!(
                 "Bumped '{}' to point release {}",
                 version.path.display(),
@@ -371,6 +405,7 @@ fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
                 version.path.display(),
                 version.to_string(&bump_type)
             ),
+            BumpType::Base => { /* won't happen */ }
         },
         Err(err) => {
             eprintln!("Failed to write version file: {err}");
@@ -403,10 +438,7 @@ fn get_git_tag() -> Result<String, BumpError> {
         return Err(BumpError::Git("Current commit is not tagged".to_string()));
     }
 
-    let mut tag = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if tag.starts_with('v') {
-        tag = tag[1..].to_string(); // Remove 'v' prefix if present
-    }
+    let tag = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(tag)
 }
 
@@ -481,11 +513,14 @@ fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpEr
     // Create the conventional tag name based on version
     let tag_name = if version.candidate > 0 {
         format!(
-            "v{}.{}.{}-rc{}",
-            version.major, version.minor, version.patch, version.candidate
+            "{}{}.{}.{}-rc{}",
+            version.prefix, version.major, version.minor, version.patch, version.candidate
         )
     } else {
-        format!("v{}.{}.{}", version.major, version.minor, version.patch)
+        format!(
+            "{}{}.{}.{}",
+            version.prefix, version.major, version.minor, version.patch
+        )
     };
 
     // Check if the tag already exists
@@ -561,6 +596,14 @@ fn main() -> ExitCode {
                         .default_value("bumpfile")
                         .help("Path to the bumpfile to initialize")
                 )
+                .arg(
+                    Arg::new("prefix")
+                        .long("prefix")
+                        .value_name("PREFIX")
+                        .value_parser(clap::value_parser!(String))
+                        .default_value("v")
+                        .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
+                )
         )
         .subcommand(
             Command::new("gen")
@@ -634,37 +677,44 @@ fn main() -> ExitCode {
                 .help("Print base version (no candidate suffix) from PATH, without a newline. Useful for CMake"),
         )
         .arg(
+            Arg::new("prefix")
+                .long("prefix")
+                .value_name("PREFIX")
+                .value_parser(clap::value_parser!(String))
+                .num_args(1)
+                .group("meta")
+                .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
+        )
+        .arg(
             Arg::new("major")
                 .long("major")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with_all(["minor", "patch", "print-group"])
+                .group("point-release")
+                .conflicts_with_all(["meta", "candidate-release", "print-group"])
                 .help("Bump the major version"),
         )
         .arg(
             Arg::new("minor")
                 .long("minor")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with_all(["major", "patch", "print-group"])
+                .group("point-release")
+                .conflicts_with_all(["meta", "candidate-release", "print-group"])
                 .help("Bump the minor version"),
         )
         .arg(
             Arg::new("patch")
                 .long("patch")
                 .action(clap::ArgAction::SetTrue)
-                .conflicts_with_all(["major", "minor", "print-group"])
+                .group("point-release")
+                .conflicts_with_all(["meta", "candidate-release", "print-group"])
                 .help("Bump the patch version"),
-        )
-        .group(
-            ArgGroup::new("point-release")
-                .args(["major", "minor", "patch"])
-                .conflicts_with_all(["candidate-release", "print-group"])
         )
         .arg(
             Arg::new("release")
                 .long("release")
                 .action(clap::ArgAction::SetTrue)
                 .group("point-release")
-                .conflicts_with_all(["major", "minor", "patch"])
+                .conflicts_with_all(["meta", "candidate-release", "print-group"])
                 .help("Drop candidacy and promote to release")
         )
         .arg(
@@ -680,7 +730,8 @@ fn main() -> ExitCode {
     match matches.subcommand() {
         Some(("init", sub_matches)) => {
             let bumpfile = sub_matches.get_one::<String>("bumpfile").unwrap();
-            if let Err(err) = initialize(bumpfile) {
+            let prefix = sub_matches.get_one::<String>("prefix").unwrap();
+            if let Err(err) = initialize(bumpfile, prefix) {
                 eprintln!("{err}");
                 return ExitCode::FAILURE;
             }
@@ -719,6 +770,7 @@ fn main() -> ExitCode {
                 print(&version, matches.get_flag("print-base"));
             } else if matches.contains_id("point-release")
                 || matches.contains_id("candidate-release")
+                || matches.get_one::<String>("prefix").is_some()
             {
                 if let Err(err) = apply(&matches) {
                     eprintln!("{err}");
