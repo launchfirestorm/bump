@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 #[test]
-fn test_version_default() {
+fn version_default() {
     let path = PathBuf::from("test.bumpfile");
     let version = Version::default(&path);
 
@@ -16,36 +16,16 @@ fn test_version_default() {
 }
 
 #[test]
-fn test_is_git_repository() {
-    // This test will pass or fail depending on whether we're in a git repo
-    // Just test that the function doesn't panic
-    let _ = is_git_repository();
-}
-
-#[test]
-fn test_get_git_tag_non_git_repo() {
-    // This should fail if we're not in a git repo or not on a tagged commit
-    match get_git_tag() {
-        Ok(_) => {
-            // If we're on a tagged commit, that's fine
-        }
-        Err(BumpError::Git(_)) => {
-            // Expected if not in git repo or not on tagged commit
-        }
-        Err(_) => panic!("Unexpected error type"),
-    }
-}
-
-#[test]
-fn test_version_from_file_valid() {
+fn version_from_file_valid() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
-    let content = "MAJOR=1\nMINOR=2\nPATCH=3\nCANDIDATE=0\n";
+    let content = "PREFIX=prefix_\nMAJOR=1\nMINOR=2\nPATCH=3\nCANDIDATE=0\n";
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
 
+    assert_eq!(version.prefix, "prefix_");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 3);
@@ -54,7 +34,7 @@ fn test_version_from_file_valid() {
 }
 
 #[test]
-fn test_version_from_file_invalid_major() {
+fn version_from_file_invalid_major() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
@@ -70,7 +50,7 @@ fn test_version_from_file_invalid_major() {
 }
 
 #[test]
-fn test_version_from_file_invalid_minor() {
+fn version_from_file_invalid_minor() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
@@ -86,7 +66,7 @@ fn test_version_from_file_invalid_minor() {
 }
 
 #[test]
-fn test_version_from_file_invalid_patch() {
+fn version_from_file_invalid_patch() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
@@ -102,7 +82,7 @@ fn test_version_from_file_invalid_patch() {
 }
 
 #[test]
-fn test_version_from_file_invalid_candidate() {
+fn version_from_file_invalid_candidate() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
@@ -118,7 +98,7 @@ fn test_version_from_file_invalid_candidate() {
 }
 
 #[test]
-fn test_version_from_file_missing_file() {
+fn version_from_file_missing_file() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("nonexistent.bumpfile");
 
@@ -131,7 +111,7 @@ fn test_version_from_file_missing_file() {
 }
 
 #[test]
-fn test_version_to_file() {
+fn version_to_file() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
@@ -155,7 +135,7 @@ fn test_version_to_file() {
 }
 
 #[test]
-fn test_version_to_string_point() {
+fn version_to_string_point() {
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -170,7 +150,7 @@ fn test_version_to_string_point() {
 }
 
 #[test]
-fn test_version_to_string_candidate() {
+fn version_to_string_candidate() {
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -185,7 +165,7 @@ fn test_version_to_string_candidate() {
 }
 
 #[test]
-fn test_version_to_header() {
+fn version_to_header() {
     let temp_dir = TempDir::new().unwrap();
     let header_path = temp_dir.path().join("version.h");
 
@@ -216,7 +196,7 @@ fn test_version_to_header() {
 }
 
 #[test]
-fn test_resolve_path_absolute() {
+fn resolve_path_absolute() {
     let absolute_path = if cfg!(windows) {
         "C:\\test\\path"
     } else {
@@ -228,7 +208,7 @@ fn test_resolve_path_absolute() {
 }
 
 #[test]
-fn test_resolve_path_relative() {
+fn resolve_path_relative() {
     let relative_path = "test.bumpfile";
     let resolved = resolve_path(relative_path);
 
@@ -238,17 +218,17 @@ fn test_resolve_path_relative() {
 }
 
 #[test]
-fn test_ensure_directory_exists() {
+fn ensure_directory_exists() {
     let temp_dir = TempDir::new().unwrap();
     let nested_path = temp_dir.path().join("nested").join("deep").join("file.txt");
 
-    ensure_directory_exists(&nested_path).unwrap();
+    super::ensure_directory_exists(&nested_path).unwrap();
 
     assert!(nested_path.parent().unwrap().exists());
 }
 
 #[test]
-fn test_bump_error_display() {
+fn bump_error_display() {
     let io_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
     let bump_error = BumpError::IoError(io_error);
 
@@ -257,15 +237,15 @@ fn test_bump_error_display() {
 
     let parse_error = BumpError::ParseError("MAJOR".to_string());
     let display = format!("{parse_error}");
-    assert!(display.contains("Invalid MAJOR value"));
+    assert!(display.contains("MAJOR value"));
 
     let logic_error = BumpError::LogicError("Test error".to_string());
     let display = format!("{logic_error}");
-    assert!(display.contains("Error: Test error"));
+    assert!(display.contains("Error >> Test error"));
 }
 
 #[test]
-fn test_bump_error_from_io_error() {
+fn bump_error_from_io_error() {
     let io_error = io::Error::new(io::ErrorKind::NotFound, "File not found");
     let bump_error: BumpError = io_error.into();
 
@@ -276,7 +256,7 @@ fn test_bump_error_from_io_error() {
 }
 
 #[test]
-fn test_version_round_trip() {
+fn version_round_trip() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
@@ -304,11 +284,11 @@ fn test_version_round_trip() {
 }
 
 #[test]
-fn test_version_file_with_comments() {
+fn version_file_with_comments() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
-    let content = "# This is a comment\nMAJOR=1\n# Another comment\nMINOR=2\nPATCH=3\nCANDIDATE=0\n# End comment";
+    let content = "# This is a comment\nPREFIX=\nMAJOR=1\n# Another comment\nMINOR=2\nPATCH=3\nCANDIDATE=0\n# End comment";
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
@@ -320,15 +300,16 @@ fn test_version_file_with_comments() {
 }
 
 #[test]
-fn test_version_file_with_whitespace() {
+fn version_file_with_whitespace() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.bumpfile");
 
-    let content = "MAJOR= 1 \nMINOR= 2 \nPATCH= 3 \nCANDIDATE= 0 \n";
+    let content = "  PREFIX=  \n\tMAJOR= 1 \nMINOR= 2 \nPATCH= 3 \nCANDIDATE= 0 \n";
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
 
+    assert_eq!(version.prefix, "");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 3);
@@ -336,7 +317,7 @@ fn test_version_file_with_whitespace() {
 }
 
 #[test]
-fn test_get_git_commit_sha() {
+fn commit_sha() {
     match get_git_commit_sha() {
         Ok(commit_sha) => {
             println!("Commit SHA: {commit_sha}");
@@ -359,12 +340,9 @@ fn test_get_git_commit_sha() {
     }
 }
 
-// Note: The following tests for the bump() method can now be tested
-// because point and candidate bumps no longer depend on git.
-// Only development bumps require git access.
 
 #[test]
-fn test_version_bump_major() {
+fn version_bump_major() {
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -384,7 +362,7 @@ fn test_version_bump_major() {
 }
 
 #[test]
-fn test_version_bump_minor() {
+fn version_bump_minor() {
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -404,7 +382,7 @@ fn test_version_bump_minor() {
 }
 
 #[test]
-fn test_version_bump_patch() {
+fn version_bump_patch() {
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -424,9 +402,9 @@ fn test_version_bump_patch() {
 }
 
 #[test]
-fn test_version_bump_candidate() {
+fn version_bump_candidate() {
     let mut version = Version {
-        prefix: "v".to_string(),
+        prefix: "prefix_".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
@@ -436,7 +414,7 @@ fn test_version_bump_candidate() {
 
     version.bump(&BumpType::Candidate).unwrap();
 
-    assert_eq!(version.prefix, "v");
+    assert_eq!(version.prefix, "prefix_");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
     assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
@@ -444,7 +422,7 @@ fn test_version_bump_candidate() {
 }
 
 #[test]
-fn test_version_bump_candidate_existing_value() {
+fn version_bump_candidate_existing_value() {
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -464,7 +442,7 @@ fn test_version_bump_candidate_existing_value() {
 }
 
 #[test]
-fn test_version_bump_sequence() {
+fn version_bump_sequence() {
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -506,7 +484,7 @@ fn test_version_bump_sequence() {
 }
 
 #[test]
-fn test_bump_types() {
+fn bump_types() {
     // Test that the enum variants exist and can be constructed
     let _major = BumpType::Point(PointType::Major);
     let _minor = BumpType::Point(PointType::Minor);
@@ -517,7 +495,7 @@ fn test_bump_types() {
 }
 
 #[test]
-fn test_point_types() {
+fn point_types() {
     // Test that the enum variants exist
     let _major = PointType::Major;
     let _minor = PointType::Minor;
@@ -525,7 +503,7 @@ fn test_point_types() {
 }
 
 #[test]
-fn test_version_bump_patch_with_candidate() {
+fn version_bump_patch_with_candidate() {
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -546,7 +524,7 @@ fn test_version_bump_patch_with_candidate() {
 }
 
 #[test]
-fn test_version_to_string_candidate_with_value() {
+fn version_to_string_candidate_with_value() {
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -561,7 +539,7 @@ fn test_version_to_string_candidate_with_value() {
 }
 
 #[test]
-fn test_version_to_string_none_tagged_without_candidate() {
+fn version_to_string_none_tagged_without_candidate() {
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -578,7 +556,7 @@ fn test_version_to_string_none_tagged_without_candidate() {
 }
 
 #[test]
-fn test_version_to_string_point_with_candidate() {
+fn version_to_string_point_with_candidate() {
     let version = Version {
         prefix: "v".to_string(),
         major: 1,

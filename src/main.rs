@@ -1,4 +1,4 @@
-use clap::{Arg, ArgGroup, ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use regex::Regex;
 use std::{
     fmt, fs, io,
@@ -47,10 +47,10 @@ enum BumpType {
 impl fmt::Display for BumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BumpError::IoError(err) => write!(f, "I/O error: {err}"),
-            BumpError::ParseError(field) => write!(f, "Invalid {field} value"),
-            BumpError::LogicError(msg) => write!(f, "Error: {msg}"),
-            BumpError::Git(msg) => write!(f, "Git error: {msg}"),
+            BumpError::IoError(err) => write!(f, "I/O error >> {err}"),
+            BumpError::ParseError(field) => write!(f, "Parse error >> {field} value"),
+            BumpError::LogicError(msg) => write!(f, "Error >> {msg}"),
+            BumpError::Git(msg) => write!(f, "Git error >> {msg}"),
         }
     }
 }
@@ -76,37 +76,46 @@ impl Version {
     fn from_file(path: &Path) -> Result<Self, BumpError> {
         let content = fs::read_to_string(path)?;
 
-        let mut major = 0;
-        let mut minor = 0;
-        let mut patch = 0;
-        let mut candidate = 0;
-        let mut prefix = "v".to_string(); // default prefix
+        let mut major: Option<u32> = None;
+        let mut minor: Option<u32> = None;
+        let mut patch: Option<u32> = None;
+        let mut candidate: Option<u32> = None;
+        let mut prefix: Option<String> = None;
 
-        for line in content.lines() {
-            if let Some(value) = line.strip_prefix("MAJOR=") {
-                major = value
+        for mut line in content.lines() {
+            line = line.trim();
+            if let Some(value) = line.strip_prefix("PREFIX=") {
+                prefix = Some(value.trim().to_string());
+            } else if let Some(value) = line.strip_prefix("MAJOR=") {
+                major = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("MAJOR".to_string()))?;
+                    .map_err(|_| BumpError::ParseError("MAJOR".to_string()))?);
             } else if let Some(value) = line.strip_prefix("MINOR=") {
-                minor = value
+                minor = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("MINOR".to_string()))?;
+                    .map_err(|_| BumpError::ParseError("MINOR".to_string()))?);
             } else if let Some(value) = line.strip_prefix("PATCH=") {
-                patch = value
+                patch = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("PATCH".to_string()))?;
+                    .map_err(|_| BumpError::ParseError("PATCH".to_string()))?);
             } else if let Some(value) = line.strip_prefix("CANDIDATE=") {
-                candidate = value
+                candidate = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("CANDIDATE".to_string()))?;
-            } else if let Some(value) = line.strip_prefix("PREFIX=") {
-                prefix = value.trim().to_string();
+                    .map_err(|_| BumpError::ParseError("CANDIDATE".to_string()))?);
             }
         }
+
+        // Ensure all required fields are present
+        let prefix = prefix.ok_or_else(|| BumpError::ParseError("Missing PREFIX field".to_string()))?;
+        let major = major.ok_or_else(|| BumpError::ParseError("Missing MAJOR field".to_string()))?;
+        let minor = minor.ok_or_else(|| BumpError::ParseError("Missing MINOR field".to_string()))?;
+        let patch = patch.ok_or_else(|| BumpError::ParseError("Missing PATCH field".to_string()))?;
+        let candidate = candidate.ok_or_else(|| BumpError::ParseError("Missing CANDIDATE field".to_string()))?;
+
         Ok(Version {
             prefix,
             major,
@@ -546,13 +555,13 @@ fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpEr
         // Default conventional commit message
         let default_message = if version.candidate > 0 {
             format!(
-                "chore(release): bump version to {}.{}.{}-rc{}",
-                version.major, version.minor, version.patch, version.candidate
+                "chore(release): bump version to {}{}.{}.{}-rc{}",
+                version.prefix, version.major, version.minor, version.patch, version.candidate
             )
         } else {
             format!(
-                "chore(release): bump version to {}.{}.{}",
-                version.major, version.minor, version.patch
+                "chore(release): bump version to {}{}.{}.{}",
+                version.prefix, version.major, version.minor, version.patch
             )
         };
         cmd.args(["-m", &default_message]);

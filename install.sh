@@ -12,83 +12,216 @@ NC='\033[0m'
 info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+error() {
+  echo -e "${RED}[ERROR]${NC} $1"
+  exit 1
+}
 
 check_github_token() {
-    [[ -z "$GH_TOKEN" ]] && error "GH_TOKEN required. Set: export GH_TOKEN=your_token"
-    info "GitHub private access token found"
+  [[ -z "$GH_TOKEN" ]] && error "GH_TOKEN required. Set: export GH_TOKEN=your_token"
+  info "GitHub private access token found"
 }
 
 github_api_call() {
-    curl -sSL -H "Authorization: token $GH_TOKEN" "$1"
+  curl -sSL -H "Authorization: token $GH_TOKEN" "$1"
 }
 
-check_os() {
-    [[ "$OSTYPE" != "linux-gnu"* ]] && error "Linux only. Current: $OSTYPE"
-    info "Linux detected"
+detect_os() {
+  case "$OSTYPE" in
+    linux-gnu*)
+      OS="linux"
+      INSTALL_DIR="/usr/local/bin"
+      ;;
+    darwin*)
+      OS="macos"
+      INSTALL_DIR="/usr/local/bin"
+      ;;
+    msys*|mingw*|cygwin*)
+      OS="windows"
+      BINARY_NAME="bump.exe"
+      # Try Windows-style paths first, fallback to Unix-style
+      if [[ -d "/c/Windows/System32" ]]; then
+        INSTALL_DIR="/c/Program Files/bump"
+      else
+        INSTALL_DIR="/usr/local/bin"
+      fi
+      ;;
+    *)
+      error "Unsupported OS: $OSTYPE. Supported: Linux, macOS, Windows"
+      ;;
+  esac
+  info "Operating System: $OS"
 }
 
 detect_arch() {
-    case $(uname -m) in
-        x86_64) ARCH="amd64" ;;
-        aarch64|arm64) ARCH="arm64" ;;
-        *) error "Unsupported arch: $(uname -m)" ;;
-    esac
-    info "Architecture: $ARCH"
+  case $(uname -m) in
+    x86_64|amd64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *) error "Unsupported architecture: $(uname -m). Supported: x86_64/amd64, aarch64/arm64" ;;
+  esac
+  info "Architecture: $ARCH"
 }
 
 check_dependencies() {
-    for cmd in curl sudo; do
-        command -v "$cmd" >/dev/null || error "Missing: $cmd"
-    done
+  # Check for required commands
+  command -v curl >/dev/null || error "Missing required command: curl"
+  
+  # Check for sudo only on Unix-like systems when needed
+  if [[ "$OS" != "windows" ]] && [[ ! -w "$INSTALL_DIR" ]]; then
+    command -v sudo >/dev/null || error "Missing required command: sudo (needed for installation to $INSTALL_DIR)"
+  fi
 }
 
 install_bump() {
-    local asset_name="bump-linux-musl-${ARCH}"
-    local temp_file=$(mktemp)
-    
-    info "Downloading bump..."
-    
-    local release_data=$(github_api_call "https://api.github.com/repos/${REPO}/releases/latest")
-    local asset_id
-    
-    if command -v jq >/dev/null 2>&1; then
-        asset_id=$(echo "$release_data" | jq -r ".assets[] | select(.name==\"$asset_name\") | .id")
+  # Construct asset name based on OS and architecture
+  local asset_name
+  case "$OS" in
+    linux)
+      asset_name="bump-linux-${ARCH}"
+      ;;
+    macos)
+      asset_name="bump-macos-${ARCH}"
+      ;;
+    windows)
+      asset_name="bump-windows-${ARCH}.exe"
+      ;;
+    *)
+      error "Unsupported OS for asset naming: $OS"
+      ;;
+  esac
+
+  local temp_file
+  temp_file=$(mktemp) || error "Failed to create temporary file"
+
+  info "Downloading $asset_name..."
+
+  local release_data
+  release_data=$(github_api_call "https://api.github.com/repos/${REPO}/releases/latest") || error "Failed to fetch release data"
+  
+  local asset_id
+
+  if command -v jq >/dev/null 2>&1; then
+    asset_id=$(echo "$release_data" | jq -r ".assets[] | select(.name==\"$asset_name\") | .id")
+  else
+    asset_id=$(echo "$release_data" | grep -A 2 "\"name\": \"$asset_name\"" | grep '"id":' | sed -E 's/.*"id": ([0-9]+).*/\1/')
+  fi
+
+  [[ -z "$asset_id" || "$asset_id" == "null" ]] && error "Asset $asset_name not found in latest release"
+
+  curl -sSL -H "Authorization: token $GH_TOKEN" -H "Accept: application/octet-stream" -o "$temp_file" "https://api.github.com/repos/${REPO}/releases/assets/$asset_id" || error "Download failed"
+
+  [[ ! -s "$temp_file" ]] && error "Downloaded file is empty"
+
+  chmod +x "$temp_file" || error "Failed to make binary executable"
+
+  # Create install directory if it doesn't exist (especially for Windows)
+  if [[ ! -d "$INSTALL_DIR" ]]; then
+    if [[ "$OS" == "windows" ]]; then
+      mkdir -p "$INSTALL_DIR" 2>/dev/null || {
+        warning "Could not create $INSTALL_DIR. Installing to current directory instead."
+        INSTALL_DIR="."
+      }
     else
-        asset_id=$(echo "$release_data" | grep -A 2 "\"name\": \"$asset_name\"" | grep '"id":' | sed -E 's/.*"id": ([0-9]+).*/\1/')
+      if [[ -w "$(dirname "$INSTALL_DIR")" ]]; then
+        mkdir -p "$INSTALL_DIR" || error "Failed to create $INSTALL_DIR"
+      else
+        sudo mkdir -p "$INSTALL_DIR" || error "Failed to create $INSTALL_DIR with sudo"
+      fi
     fi
-    
-    [[ -z "$asset_id" || "$asset_id" == "null" ]] && error "Asset $asset_name not found"
-    
-    curl -sSL -H "Authorization: token $GH_TOKEN" -H "Accept: application/octet-stream" -o "$temp_file" "https://api.github.com/repos/${REPO}/releases/assets/$asset_id" || error "Download failed"
-    
-    [[ ! -s "$temp_file" ]] && error "Empty download"
-    
-    chmod +x "$temp_file"
-    
-    if [[ -w "/usr/local/bin" ]]; then
-        mv "$temp_file" "/usr/local/bin/$BINARY_NAME" || error "Install failed"
+  fi
+
+  # Install to appropriate directory
+  local target_path="$INSTALL_DIR/$BINARY_NAME"
+  
+  if [[ -w "$INSTALL_DIR" ]]; then
+    mv "$temp_file" "$target_path" || error "Failed to install to $target_path"
+    success "$BINARY_NAME installed to $target_path"
+  else
+    if [[ "$OS" == "windows" ]]; then
+      # On Windows, try alternative locations
+      local alt_dirs=("$HOME/bin" "$HOME" ".")
+      local installed=false
+      
+      for alt_dir in "${alt_dirs[@]}"; do
+        if [[ -w "$alt_dir" ]]; then
+          mkdir -p "$alt_dir" 2>/dev/null
+          if mv "$temp_file" "$alt_dir/$BINARY_NAME" 2>/dev/null; then
+            success "$BINARY_NAME installed to $alt_dir/$BINARY_NAME"
+            warning "Add $alt_dir to your PATH to use bump from anywhere"
+            installed=true
+            break
+          fi
+        fi
+      done
+      
+      if [[ "$installed" == "false" ]]; then
+        warning "Could not install to system directory. Binary saved as: $temp_file"
+        warning "Please manually move it to a directory in your PATH"
+      fi
     else
-        info "Need elevation to write to /usr/local/bin"
-        sudo mv "$temp_file" "/usr/local/bin/$BINARY_NAME" || error "Install failed"
+      info "Requesting elevation to install to $INSTALL_DIR"
+      sudo mv "$temp_file" "$target_path" || error "Failed to install to $target_path with sudo"
+      success "$BINARY_NAME installed to $target_path"
     fi
-    
-    success "bump installed to /usr/local/bin/$BINARY_NAME"
+  fi
 }
 
 verify_installation() {
-    local version=$(bump --version 2>/dev/null || echo "unknown")
-    success "Installation complete! Version: $version"
+  local version
+  
+  # Try different ways to find and run the binary
+  local binary_paths=("$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME")
+  local found=false
+  
+  for binary_path in "${binary_paths[@]}"; do
+    if command -v "$binary_path" >/dev/null 2>&1; then
+      version=$("$binary_path" --version 2>/dev/null) || version="unknown"
+      success "Installation complete! Version: $version"
+      success "Binary location: $(command -v "$binary_path")"
+      found=true
+      break
+    fi
+  done
+  
+  if [[ "$found" == "false" ]]; then
+    warning "Binary installed but not found in PATH. You may need to:"
+    case "$OS" in
+      windows)
+        warning "1. Restart your terminal/command prompt"
+        warning "2. Add the installation directory to your PATH"
+        warning "3. Or navigate to the installation directory to run bump"
+        ;;
+      *)
+        warning "1. Restart your terminal"
+        warning "2. Add $INSTALL_DIR to your PATH: export PATH=\"$INSTALL_DIR:\$PATH\""
+        warning "3. Or run the full path: $INSTALL_DIR/$BINARY_NAME"
+        ;;
+    esac
+  fi
 }
 
 main() {
-    echo "🚀 Bump Installer"
-    check_github_token
-    check_os
-    detect_arch
-    check_dependencies
-    install_bump
-    verify_installation
+  echo "🚀 Bump Installer - Cross Platform"
+  echo "Supports: Linux (amd64/arm64), macOS (amd64/arm64), Windows (amd64/arm64)"
+  echo ""
+  
+  check_github_token
+  detect_os
+  detect_arch
+  check_dependencies
+  install_bump
+  verify_installation
+  
+  echo ""
+  echo "🎉 Installation process completed!"
+  case "$OS" in
+    windows)
+      echo "💡 Windows users: If bump is not in your PATH, try running it from the installation directory"
+      ;;
+    *)
+      echo "💡 Run 'bump --help' to get started!"
+      ;;
+  esac
 }
 
 main "$@"
