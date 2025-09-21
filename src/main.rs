@@ -47,10 +47,16 @@ enum BumpType {
 impl fmt::Display for BumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BumpError::IoError(err) => write!(f, "I/O error >> {err}"),
-            BumpError::ParseError(field) => write!(f, "Parse error >> {field} value"),
-            BumpError::LogicError(msg) => write!(f, "Error >> {msg}"),
-            BumpError::Git(msg) => write!(f, "Git error >> {msg}"),
+            BumpError::IoError(err) => {
+                if err.kind() == io::ErrorKind::NotFound {
+                    write!(f, "bump error: I/O >> file not found '{}'", err.to_string())
+                } else {
+                    write!(f, "bump error: I/O >> {err}")
+                }
+            }
+            BumpError::ParseError(field) => write!(f, "bump error: parse >> {field}"),
+            BumpError::LogicError(msg) => write!(f, "bump error >> {msg}"),
+            BumpError::Git(msg) => write!(f, "bump error: git >> {msg}"),
         }
     }
 }
@@ -74,7 +80,16 @@ impl Version {
     }
 
     fn from_file(path: &Path) -> Result<Self, BumpError> {
-        let content = fs::read_to_string(path)?;
+        let content = fs::read_to_string(path).map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                BumpError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("{}", path.display()),
+                ))
+            } else {
+                BumpError::IoError(err)
+            }
+        })?;
 
         let mut major: Option<u32> = None;
         let mut minor: Option<u32> = None;
@@ -90,31 +105,31 @@ impl Version {
                 major = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("MAJOR".to_string()))?);
+                    .map_err(|_| BumpError::ParseError("invalid MAJOR value".to_string()))?);
             } else if let Some(value) = line.strip_prefix("MINOR=") {
                 minor = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("MINOR".to_string()))?);
+                    .map_err(|_| BumpError::ParseError("invalid MINOR value".to_string()))?);
             } else if let Some(value) = line.strip_prefix("PATCH=") {
                 patch = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("PATCH".to_string()))?);
+                    .map_err(|_| BumpError::ParseError("invalid PATCH value".to_string()))?);
             } else if let Some(value) = line.strip_prefix("CANDIDATE=") {
                 candidate = Some(value
                     .trim()
                     .parse()
-                    .map_err(|_| BumpError::ParseError("CANDIDATE".to_string()))?);
+                    .map_err(|_| BumpError::ParseError("invalid CANDIDATE value".to_string()))?);
             }
         }
 
         // Ensure all required fields are present
-        let prefix = prefix.ok_or_else(|| BumpError::ParseError("Missing PREFIX field".to_string()))?;
-        let major = major.ok_or_else(|| BumpError::ParseError("Missing MAJOR field".to_string()))?;
-        let minor = minor.ok_or_else(|| BumpError::ParseError("Missing MINOR field".to_string()))?;
-        let patch = patch.ok_or_else(|| BumpError::ParseError("Missing PATCH field".to_string()))?;
-        let candidate = candidate.ok_or_else(|| BumpError::ParseError("Missing CANDIDATE field".to_string()))?;
+        let prefix = prefix.ok_or_else(|| BumpError::ParseError("missing PREFIX field".to_string()))?;
+        let major = major.ok_or_else(|| BumpError::ParseError("missing MAJOR field".to_string()))?;
+        let minor = minor.ok_or_else(|| BumpError::ParseError("missing MINOR field".to_string()))?;
+        let patch = patch.ok_or_else(|| BumpError::ParseError("missing PATCH field".to_string()))?;
+        let candidate = candidate.ok_or_else(|| BumpError::ParseError("missing CANDIDATE field".to_string()))?;
 
         Ok(Version {
             prefix,
@@ -173,24 +188,24 @@ CANDIDATE={}
                 .unwrap();
         let caps = re
             .captures(version_str)
-            .ok_or_else(|| BumpError::ParseError("Invalid version format".to_string()))?;
+            .ok_or_else(|| BumpError::ParseError("invalid version format".to_string()))?;
 
         let prefix = caps
             .name("prefix")
             .map_or("v".to_string(), |m| m.as_str().to_string());
         let major = caps["major"]
             .parse()
-            .map_err(|_| BumpError::ParseError("MAJOR".to_string()))?;
+            .map_err(|_| BumpError::ParseError("invalid MAJOR value".to_string()))?;
         let minor = caps["minor"]
             .parse()
-            .map_err(|_| BumpError::ParseError("MINOR".to_string()))?;
+            .map_err(|_| BumpError::ParseError("invalid MINOR value".to_string()))?;
         let patch = caps["patch"]
             .parse()
-            .map_err(|_| BumpError::ParseError("PATCH".to_string()))?;
+            .map_err(|_| BumpError::ParseError("invalid PATCH value".to_string()))?;
         let candidate = caps.name("candidate").map_or(Ok(0), |m| {
             m.as_str()
                 .parse()
-                .map_err(|_| BumpError::ParseError("CANDIDATE".to_string()))
+                .map_err(|_| BumpError::ParseError("invalid CANDIDATE value".to_string()))
         })?;
 
         Ok(Version {
@@ -294,7 +309,7 @@ fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
                 candidate: 0,
                 path: path.to_path_buf(),
             }),
-            _ => Err(BumpError::ParseError("Invalid version format".to_string())),
+            _ => Err(BumpError::ParseError("invalid version format".to_string())),
         }
     }
 }
@@ -371,25 +386,8 @@ fn print(version: &Version, base: bool) {
 }
 
 fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
-    let mut version = match get_version(matches) {
-        Ok(v) => v,
-        Err(err) => {
-            if let BumpError::IoError(_) = err {
-                let path = matches.get_one::<String>("bumpfile").unwrap();
-                let resolved_path = resolve_path(path);
-                // println!("If creating a new file, initialize with --init");
-                return Err(BumpError::IoError(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("File not found: {}", resolved_path.display()),
-                )));
-            } else {
-                return Err(err);
-            }
-        }
-    };
-
+    let mut version = get_version(matches)?;
     let bump_type = get_bump_type(matches)?;
-
     version.bump(&bump_type)?;
 
     match version.to_file() {
@@ -417,7 +415,6 @@ fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
             BumpType::Base => { /* won't happen */ }
         },
         Err(err) => {
-            eprintln!("Failed to write version file: {err}");
             return Err(err);
         }
     }
@@ -473,7 +470,7 @@ fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> {
     }
 
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(Path::new(bumpfile))?;
+    let version = Version::from_file(&resolve_path(bumpfile))?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
 
     let tagged = get_git_tag().is_ok();
@@ -585,10 +582,18 @@ fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpEr
 
 fn tag_version(matches: &ArgMatches) -> Result<(), BumpError> {
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(Path::new(bumpfile))?;
+    let version = Version::from_file(&resolve_path(bumpfile))?;
     let message = matches.get_one::<String>("message");
 
     create_git_tag(&version, message.map(|s| s.as_str()))
+}
+
+fn egress(result: Result<(), BumpError>) -> ExitCode {
+    if let Err(err) = result {
+        eprintln!("{err}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
 
 fn main() -> ExitCode {
@@ -740,10 +745,7 @@ fn main() -> ExitCode {
         Some(("init", sub_matches)) => {
             let bumpfile = sub_matches.get_one::<String>("bumpfile").unwrap();
             let prefix = sub_matches.get_one::<String>("prefix").unwrap();
-            if let Err(err) = initialize(bumpfile, prefix) {
-                eprintln!("{err}");
-                return ExitCode::FAILURE;
-            }
+            egress(initialize(bumpfile, prefix))
         }
         Some(("gen", sub_matches)) => {
             let lang_str = sub_matches
@@ -752,43 +754,32 @@ fn main() -> ExitCode {
             let lang = match Language::from_str(lang_str) {
                 Some(l) => l,
                 None => {
-                    eprintln!("Invalid language specified: {lang_str}");
-                    return ExitCode::FAILURE;
+                    return egress(Err(BumpError::LogicError(format!("Invalid language specified: {lang_str}"))));
                 }
             };
-            if let Err(err) = generate(sub_matches, &lang) {
-                eprintln!("{err}");
-                return ExitCode::FAILURE;
-            }
+            egress(generate(sub_matches, &lang))
         }
         Some(("tag", sub_matches)) => {
-            if let Err(err) = tag_version(sub_matches) {
-                eprintln!("{err}");
-                return ExitCode::FAILURE;
-            }
+            egress(tag_version(sub_matches))
         }
         _ => {
             if matches.contains_id("print-group") {
                 let version = match get_version(&matches) {
                     Ok(v) => v,
                     Err(err) => {
-                        eprintln!("Error getting version: {err}");
-                        return ExitCode::FAILURE;
+                        return egress(Err(err));
                     }
                 };
                 print(&version, matches.get_flag("print-base"));
+                ExitCode::SUCCESS
             } else if matches.contains_id("point-release")
                 || matches.contains_id("candidate-release")
                 || matches.get_one::<String>("prefix").is_some()
             {
-                if let Err(err) = apply(&matches) {
-                    eprintln!("{err}");
-                    return ExitCode::FAILURE;
-                }
+                egress(apply(&matches))
             } else {
-                eprintln!("No action specified. Run with --help to see available options.");
+                return egress(Err(BumpError::LogicError("no action specified. Run with --help to see available options.".to_string())));
             }
         }
     }
-    ExitCode::SUCCESS
 }

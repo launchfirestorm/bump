@@ -44,7 +44,7 @@ fn version_from_file_invalid_major() {
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "MAJOR"),
+        BumpError::ParseError(field) => assert_eq!(field, "invalid MAJOR value"),
         _ => panic!("Expected ParseError"),
     }
 }
@@ -60,7 +60,7 @@ fn version_from_file_invalid_minor() {
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "MINOR"),
+        BumpError::ParseError(field) => assert_eq!(field, "invalid MINOR value"),
         _ => panic!("Expected ParseError"),
     }
 }
@@ -76,7 +76,7 @@ fn version_from_file_invalid_patch() {
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "PATCH"),
+        BumpError::ParseError(field) => assert_eq!(field, "invalid PATCH value"),
         _ => panic!("Expected ParseError"),
     }
 }
@@ -92,7 +92,7 @@ fn version_from_file_invalid_candidate() {
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "CANDIDATE"),
+        BumpError::ParseError(field) => assert_eq!(field, "invalid CANDIDATE value"),
         _ => panic!("Expected ParseError"),
     }
 }
@@ -233,15 +233,15 @@ fn bump_error_display() {
     let bump_error = BumpError::IoError(io_error);
 
     let display = format!("{bump_error}");
-    assert!(display.contains("I/O error"));
+    assert!(display.contains("bump error: I/O >> file not found"));
 
-    let parse_error = BumpError::ParseError("MAJOR".to_string());
+    let parse_error = BumpError::ParseError("invalid MAJOR value".to_string());
     let display = format!("{parse_error}");
-    assert!(display.contains("MAJOR value"));
+    assert!(display.contains("bump error: parse >> invalid MAJOR value"));
 
     let logic_error = BumpError::LogicError("Test error".to_string());
     let display = format!("{logic_error}");
-    assert!(display.contains("Error >> Test error"));
+    assert!(display.contains("bump error >> Test error"));
 }
 
 #[test]
