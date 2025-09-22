@@ -252,7 +252,7 @@ fn version_to_string_point() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -286,7 +286,7 @@ fn version_to_string_candidate() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -323,7 +323,7 @@ fn version_to_header() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -548,7 +548,6 @@ fn commit_sha() {
     }
 }
 
-
 #[test]
 fn version_bump_major() {
     let config = BumpConfig {
@@ -568,7 +567,7 @@ fn version_bump_major() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -607,7 +606,7 @@ fn version_bump_minor() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -646,7 +645,7 @@ fn version_bump_patch() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -685,7 +684,7 @@ fn version_bump_candidate() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "prefix_".to_string(),
         major: 1,
@@ -724,7 +723,7 @@ fn version_bump_candidate_existing_value() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -763,7 +762,7 @@ fn version_bump_sequence() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -843,7 +842,7 @@ fn version_bump_patch_with_candidate() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -883,7 +882,7 @@ fn version_to_string_candidate_with_value() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -917,7 +916,7 @@ fn version_to_string_none_tagged_without_candidate() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -953,7 +952,7 @@ fn version_to_string_point_with_candidate() {
             delimiter: "+".to_string(),
         },
     };
-    
+
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
@@ -1018,7 +1017,7 @@ delimiter = "+"
 
     // Read the file back and check that comments are preserved
     let updated_content = fs::read_to_string(&file_path).unwrap();
-    
+
     // Check that comments are preserved
     assert!(updated_content.contains("# https://github.com/launchfirestorm/bump"));
     assert!(updated_content.contains("# NOTE: This section is modified by the bump command"));
@@ -1026,9 +1025,436 @@ delimiter = "+"
     assert!(updated_content.contains("#  - git_sha ( 7 char sha1 of the current commit )"));
     assert!(updated_content.contains("#  - branch ( append branch name )"));
     assert!(updated_content.contains("#  - full ( <branch>_<sha1> )"));
-    
+
     // Check that values are updated
     assert!(updated_content.contains("major = 2"));
     assert!(updated_content.contains("minor = 0"));
     assert!(updated_content.contains("patch = 0"));
+}
+
+#[test]
+fn test_gen_command_c_output() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("version.h");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Load version and generate C header
+    let version = Version::from_file(&config_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        "v1.2.3",
+        &output_path,
+    )
+    .unwrap();
+
+    // Verify C header content
+    let header_content = fs::read_to_string(&output_path).unwrap();
+    assert!(header_content.contains("#define VERSION_PREFIX \"v\""));
+    assert!(header_content.contains("#define VERSION_MAJOR 1"));
+    assert!(header_content.contains("#define VERSION_MINOR 2"));
+    assert!(header_content.contains("#define VERSION_PATCH 3"));
+    assert!(header_content.contains("#define VERSION_CANDIDATE 0"));
+    assert!(header_content.contains("#define VERSION_STRING \"v1.2.3\""));
+    assert!(header_content.contains("#ifndef BUMP_VERSION_H"));
+    assert!(header_content.contains("#endif /* BUMP_VERSION_H */"));
+    assert!(header_content.contains("https://github.com/launchfirestorm/bump"));
+}
+
+#[test]
+fn test_gen_command_go_output() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("version.go");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 2
+minor = 1
+patch = 0
+candidate = 5
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "branch"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Load version and generate Go file
+    let version = Version::from_file(&config_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::Go,
+        &version,
+        "v2.1.0-rc5",
+        &output_path,
+    )
+    .unwrap();
+
+    // Verify Go file content
+    let go_content = fs::read_to_string(&output_path).unwrap();
+    assert!(go_content.contains("package version"));
+    assert!(go_content.contains("PREFIX    = \"v\""));
+    assert!(go_content.contains("MAJOR     = 2"));
+    assert!(go_content.contains("MINOR     = 1"));
+    assert!(go_content.contains("PATCH     = 0"));
+    assert!(go_content.contains("CANDIDATE = 5"));
+    assert!(go_content.contains("STRING    = \"v2.1.0-rc5\""));
+    assert!(go_content.contains("https://github.com/launchfirestorm/bump"));
+}
+
+#[test]
+fn test_gen_command_java_output() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("Version.java");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "release-"
+
+[version]
+major = 3
+minor = 0
+patch = 1
+candidate = 0
+
+[candidate]
+promotion = "major"
+delimiter = "-beta"
+
+[development]
+promotion = "full"
+delimiter = "_"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Load version and generate Java file
+    let version = Version::from_file(&config_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::Java,
+        &version,
+        "release-3.0.1",
+        &output_path,
+    )
+    .unwrap();
+
+    // Verify Java file content
+    let java_content = fs::read_to_string(&output_path).unwrap();
+    assert!(java_content.contains("public class Version"));
+    assert!(java_content.contains("public static final String PREFIX = \"release-\";"));
+    assert!(java_content.contains("public static final int MAJOR = 3;"));
+    assert!(java_content.contains("public static final int MINOR = 0;"));
+    assert!(java_content.contains("public static final int PATCH = 1;"));
+    assert!(java_content.contains("public static final int CANDIDATE = 0;"));
+    assert!(java_content.contains("public static final String STRING = \"release-3.0.1\";"));
+    assert!(java_content.contains("https://github.com/launchfirestorm/bump"));
+}
+
+#[test]
+fn test_gen_command_csharp_output() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("Version.cs");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = ""
+
+[version]
+major = 0
+minor = 5
+patch = 12
+candidate = 2
+
+[candidate]
+promotion = "patch"
+delimiter = "-alpha"
+
+[development]
+promotion = "git_sha"
+delimiter = "-dev"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Load version and generate C# file
+    let version = Version::from_file(&config_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::CSharp,
+        &version,
+        "0.5.12-alpha2",
+        &output_path,
+    )
+    .unwrap();
+
+    // Verify C# file content
+    let csharp_content = fs::read_to_string(&output_path).unwrap();
+    assert!(csharp_content.contains("public static class Version"));
+    assert!(csharp_content.contains("public const string PREFIX = \"\";"));
+    assert!(csharp_content.contains("public const int MAJOR = 0;"));
+    assert!(csharp_content.contains("public const int MINOR = 5;"));
+    assert!(csharp_content.contains("public const int PATCH = 12;"));
+    assert!(csharp_content.contains("public const int CANDIDATE = 2;"));
+    assert!(csharp_content.contains("public const string STRING = \"0.5.12-alpha2\";"));
+    assert!(csharp_content.contains("https://github.com/launchfirestorm/bump"));
+}
+
+#[test]
+fn test_development_suffix_strategies() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    // Test git_sha strategy
+    let config_content_sha = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content_sha).unwrap();
+    let version_sha = Version::from_file(&config_path).unwrap();
+    
+    // Test branch strategy
+    let config_content_branch = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "branch"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content_branch).unwrap();
+    let version_branch = Version::from_file(&config_path).unwrap();
+    
+    // Test full strategy
+    let config_content_full = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "full"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content_full).unwrap();
+    let version_full = Version::from_file(&config_path).unwrap();
+
+    // Verify the promotion strategies are correctly configured
+    assert_eq!(version_sha.config.development.promotion, "git_sha");
+    assert_eq!(version_branch.config.development.promotion, "branch");
+    assert_eq!(version_full.config.development.promotion, "full");
+    
+    // Verify delimiters
+    assert_eq!(version_sha.config.development.delimiter, "+");
+    assert_eq!(version_branch.config.development.delimiter, "+");
+    assert_eq!(version_full.config.development.delimiter, "+");
+}
+
+#[test]
+fn test_candidate_promotion_strategies() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    // Test minor promotion strategy (default)
+    let config_content_minor = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content_minor).unwrap();
+    let mut version_minor = Version::from_file(&config_path).unwrap();
+    version_minor.bump(&BumpType::Candidate).unwrap();
+    assert_eq!(version_minor.major, 1);
+    assert_eq!(version_minor.minor, 1); // Should be bumped
+    assert_eq!(version_minor.patch, 0); // Should be reset
+    assert_eq!(version_minor.candidate, 1);
+
+    // Test major promotion strategy
+    let config_content_major = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "major"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content_major).unwrap();
+    let mut version_major = Version::from_file(&config_path).unwrap();
+    version_major.bump(&BumpType::Candidate).unwrap();
+    assert_eq!(version_major.major, 2); // Should be bumped
+    assert_eq!(version_major.minor, 0); // Should be reset
+    assert_eq!(version_major.patch, 0); // Should be reset
+    assert_eq!(version_major.candidate, 1);
+
+    // Test patch promotion strategy
+    let config_content_patch = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "patch"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content_patch).unwrap();
+    let mut version_patch = Version::from_file(&config_path).unwrap();
+    version_patch.bump(&BumpType::Candidate).unwrap();
+    assert_eq!(version_patch.major, 1); // Should be unchanged
+    assert_eq!(version_patch.minor, 2); // Should be unchanged
+    assert_eq!(version_patch.patch, 4); // Should be bumped
+    assert_eq!(version_patch.candidate, 1);
+}
+
+#[test]
+fn test_multiple_output_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path_1 = temp_dir.path().join("version1.h");
+    let output_path_2 = temp_dir.path().join("include/version2.h");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+    let version = Version::from_file(&config_path).unwrap();
+
+    // Create include directory
+    fs::create_dir_all(output_path_2.parent().unwrap()).unwrap();
+
+    // Generate multiple C headers
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        "v1.2.3",
+        &output_path_1,
+    )
+    .unwrap();
+
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        "v1.2.3",
+        &output_path_2,
+    )
+    .unwrap();
+
+    // Verify both files exist and have correct content
+    assert!(output_path_1.exists());
+    assert!(output_path_2.exists());
+
+    let content_1 = fs::read_to_string(&output_path_1).unwrap();
+    let content_2 = fs::read_to_string(&output_path_2).unwrap();
+
+    // Both should have the same version info
+    for content in [&content_1, &content_2] {
+        assert!(content.contains("#define VERSION_MAJOR 1"));
+        assert!(content.contains("#define VERSION_MINOR 2"));
+        assert!(content.contains("#define VERSION_PATCH 3"));
+        assert!(content.contains("#define VERSION_STRING \"v1.2.3\""));
+    }
+}
+
+#[test]
+fn test_git_branch_detection() {
+    // This test only runs if we're in a git repository
+    match get_git_branch() {
+        Ok(branch) => {
+            println!("Current branch: {}", branch);
+            assert!(!branch.is_empty(), "Branch name should not be empty");
+            // Since you're on the "behavior" branch, we can test for that
+            // But we'll make it flexible for CI environments
+            assert!(branch.len() > 0);
+        }
+        Err(e) => {
+            println!("Git branch detection failed (expected in some environments): {e}");
+            // Don't fail the test if we're not in a git repo
+        }
+    }
 }

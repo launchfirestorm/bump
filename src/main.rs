@@ -125,7 +125,7 @@ impl Version {
                 delimiter: "+".to_string(),
             },
         };
-        
+
         Version {
             prefix: config.prefix.clone(),
             major: config.version.major,
@@ -150,6 +150,22 @@ impl Version {
         })?;
 
         let config: BumpConfig = toml::from_str(&content)?;
+
+        match config.development.promotion {
+            ref str if str == "git_sha" || str == "branch" || str == "full" => (),
+            _ => {
+                println!("invalid development promotion strategy: {}", config.development.promotion);
+                println!("defaulting to git_sha");
+            }
+        }
+
+        match config.candidate.promotion {
+            ref str if str == "minor" || str == "major" || str == "patch" => (),
+            _ => {
+                println!("invalid candidate promotion strategy: {}", config.candidate.promotion);
+                println!("defaulting to minor");
+            }
+        }
 
         Ok(Version {
             prefix: config.prefix.clone(),
@@ -193,11 +209,13 @@ delimiter = "-rc"
 [development]
 promotion = "git_sha"
 delimiter = "+"
-"#.to_string()
+"#
+            .to_string()
         });
 
         // Parse the TOML document while preserving formatting
-        let mut doc = original_content.parse::<DocumentMut>()
+        let mut doc = original_content
+            .parse::<DocumentMut>()
             .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {}", e)))?;
 
         // Update the values while preserving structure and comments
@@ -215,7 +233,7 @@ delimiter = "+"
             }
         }
 
-        // Update development section if it exists  
+        // Update development section if it exists
         if let Some(dev_table) = doc.get_mut("development") {
             if let Some(table) = dev_table.as_table_mut() {
                 table["promotion"] = value(&self.config.development.promotion);
@@ -240,8 +258,12 @@ delimiter = "+"
             }
             BumpType::Candidate => format!(
                 "{}{}.{}.{}{}{}",
-                self.prefix, self.major, self.minor, self.patch, 
-                self.config.candidate.delimiter, self.candidate
+                self.prefix,
+                self.major,
+                self.minor,
+                self.patch,
+                self.config.candidate.delimiter,
+                self.candidate
             ),
             // Useful for cmake and other tools
             BumpType::Base => format!("{}.{}.{}", self.major, self.minor, self.patch),
@@ -274,8 +296,7 @@ delimiter = "+"
                 .map_err(|_| BumpError::ParseError("invalid CANDIDATE value".to_string()))
         })?;
 
-        // Create default config (in reality this should probably read from a config file)
-        let config = BumpConfig {
+        let default_config = BumpConfig {
             prefix: prefix.clone(),
             version: VersionSection {
                 major,
@@ -300,7 +321,7 @@ delimiter = "+"
             patch,
             candidate,
             path: path.to_path_buf(),
-            config,
+            config: default_config,
         })
     }
 
@@ -423,7 +444,7 @@ fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
                         delimiter: "+".to_string(),
                     },
                 };
-                
+
                 Ok(Version {
                     prefix: "v".to_string(),
                     major: parts[0],
@@ -482,12 +503,12 @@ fn initialize(bumpfile: &str, prefix: &str) -> Result<(), BumpError> {
     let use_git_tag = use_git_tag.trim().to_lowercase();
 
     if use_git_tag == "y" {
-        match get_git_tag() {
+        match get_git_tag(true) {
             Ok(git_tag) => {
                 println!("Found git tag: {git_tag}");
                 let mut git_version = Version::from_string(&git_tag, &filepath)?;
-                    git_version.prefix = prefix.to_string(); // Override prefix from CLI
-                    git_version.to_file()?;
+                git_version.prefix = prefix.to_string(); // Override prefix from CLI
+                git_version.to_file()?;
             }
             Err(err) => {
                 return Err(err);
@@ -560,15 +581,26 @@ fn is_git_repository() -> bool {
         .unwrap_or(false)
 }
 
-fn get_git_tag() -> Result<String, BumpError> {
-    let output = ProcessCommand::new("git")
-        .args(["describe", "--exact-match", "--tags", "HEAD"])
-        .output()
-        .map_err(|e| {
-            BumpError::Git(format!(
-                "failed to run 'git describe --exact-match --tags HEAD': {e}"
-            ))
-        })?;
+fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
+    let output: std::process::Output = if last_tag {
+        ProcessCommand::new("git")
+            .args(["describe", "--tags", "--abbrev=0"])
+            .output()
+            .map_err(|e| {
+                BumpError::Git(format!(
+                    "failed to run 'git describe --tags --abbrev=0': {e}"
+                ))
+            })?
+    } else {
+        ProcessCommand::new("git")
+            .args(["describe", "--exact-match", "--tags", "HEAD"])
+            .output()
+            .map_err(|e| {
+                BumpError::Git(format!(
+                    "failed to run 'git describe --exact-match --tags HEAD': {e}"
+                ))
+            })?
+    };
 
     if !output.status.success() {
         return Err(BumpError::Git("Current commit is not tagged".to_string()));
@@ -598,7 +630,11 @@ fn get_git_branch() -> Result<String, BumpError> {
     let output = ProcessCommand::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
-        .map_err(|e| BumpError::Git(format!("failed to run 'git rev-parse --abbrev-ref HEAD': {e}")))?;
+        .map_err(|e| {
+            BumpError::Git(format!(
+                "failed to run 'git rev-parse --abbrev-ref HEAD': {e}"
+            ))
+        })?;
 
     if !output.status.success() {
         return Err(BumpError::Git(
@@ -632,17 +668,25 @@ fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> {
     let version = Version::from_file(&resolve_path(bumpfile))?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
 
-    let tagged = get_git_tag().is_ok();
+    let tagged = get_git_tag(false).is_ok();
 
     let version_string = match (tagged, version.candidate) {
-        (true, 0) => format!("{}.{}.{}", version.major, version.minor, version.patch),
+        (true, 0) => format!(
+            "{}{}.{}.{}",
+            version.prefix, version.major, version.minor, version.patch
+        ),
         (true, _) => format!(
-            "{}.{}.{}{}{}",
-            version.major, version.minor, version.patch,
-            version.config.candidate.delimiter, version.candidate
+            "{}{}.{}.{}{}{}",
+            version.prefix,
+            version.major,
+            version.minor,
+            version.patch,
+            version.config.candidate.delimiter,
+            version.candidate
         ),
         (false, 0) => format!(
-            "{}.{}.{}{}{}",
+            "{}{}.{}.{}{}{}",
+            version.prefix,
             version.major,
             version.minor,
             version.patch,
@@ -650,7 +694,8 @@ fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> {
             get_development_suffix(&version)?
         ),
         (false, _) => format!(
-            "{}.{}.{}{}{}{}{}",
+            "{}{}.{}.{}{}{}{}{}",
+            version.prefix,
             version.major,
             version.minor,
             version.patch,
@@ -683,8 +728,12 @@ fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpEr
     let tag_name = if version.candidate > 0 {
         format!(
             "{}{}.{}.{}{}{}",
-            version.prefix, version.major, version.minor, version.patch,
-            version.config.candidate.delimiter, version.candidate
+            version.prefix,
+            version.major,
+            version.minor,
+            version.patch,
+            version.config.candidate.delimiter,
+            version.candidate
         )
     } else {
         format!(
@@ -717,8 +766,12 @@ fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpEr
         let default_message = if version.candidate > 0 {
             format!(
                 "chore(release): bump version to {}{}.{}.{}{}{}",
-                version.prefix, version.major, version.minor, version.patch,
-                version.config.candidate.delimiter, version.candidate
+                version.prefix,
+                version.major,
+                version.minor,
+                version.patch,
+                version.config.candidate.delimiter,
+                version.candidate
             )
         } else {
             format!(
@@ -789,9 +842,11 @@ fn main() -> ExitCode {
                 .about("Generate header files using git tag detection")
                 .arg(
                     Arg::new("bumpfile")
-                        .value_name("bumpfile")
+                        .short('f')
+                        .long("file")
+                        .value_name("BUMPFILE")
                         .value_parser(clap::value_parser!(String))
-                        .required(true)
+                        .default_value("bump.toml")
                         .help("Path to the bumpfile to read version from")
                 )
                 .arg(
@@ -900,7 +955,7 @@ fn main() -> ExitCode {
             Arg::new("candidate")
                 .long("candidate")
                 .action(clap::ArgAction::SetTrue)
-                .help("if in candidacy increments the candidate version, otherwise bump the minor version and set the rc to 1")
+                .help("if in candidacy increments the candidate version, otherwise creates a new candidate")
                 .group("candidate-release")
                 .conflicts_with_all(["point-release", "print-group"])
         )
@@ -919,14 +974,14 @@ fn main() -> ExitCode {
             let lang = match Language::from_str(lang_str) {
                 Some(l) => l,
                 None => {
-                    return egress(Err(BumpError::LogicError(format!("Invalid language specified: {lang_str}"))));
+                    return egress(Err(BumpError::LogicError(format!(
+                        "Invalid language specified: {lang_str}"
+                    ))));
                 }
             };
             egress(generate(sub_matches, &lang))
         }
-        Some(("tag", sub_matches)) => {
-            egress(tag_version(sub_matches))
-        }
+        Some(("tag", sub_matches)) => egress(tag_version(sub_matches)),
         _ => {
             if matches.contains_id("print-group") {
                 let version = match get_version(&matches) {
@@ -943,7 +998,9 @@ fn main() -> ExitCode {
             {
                 egress(apply(&matches))
             } else {
-                return egress(Err(BumpError::LogicError("no action specified. Run with --help to see available options.".to_string())));
+                return egress(Err(BumpError::LogicError(
+                    "no action specified. Run with --help to see available options.".to_string(),
+                )));
             }
         }
     }

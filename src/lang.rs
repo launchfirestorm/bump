@@ -45,6 +45,7 @@ fn c_output(version: &Version, path: &Path, version_str: &str) -> Result<(), Bum
 #ifndef BUMP_VERSION_H
 #define BUMP_VERSION_H
 
+#define VERSION_PREFIX "{}"
 #define VERSION_MAJOR {}
 #define VERSION_MINOR {}
 #define VERSION_PATCH {}
@@ -53,7 +54,7 @@ fn c_output(version: &Version, path: &Path, version_str: &str) -> Result<(), Bum
 
 #endif /* BUMP_VERSION_H */
 "#,
-        version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
@@ -78,6 +79,7 @@ fn go_output(version: &Version, path: &Path, version_str: &str) -> Result<(), Bu
 package version
 
 const (
+	PREFIX    = "{}"
 	MAJOR     = {}
 	MINOR     = {}
 	PATCH     = {}
@@ -85,7 +87,7 @@ const (
 	STRING    = "{}"
 )
 "#,
-        version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
@@ -110,6 +112,7 @@ fn java_output(version: &Version, path: &Path, version_str: &str) -> Result<(), 
  */
 
 public class Version {{
+    public static final String PREFIX = "{}";
     public static final int MAJOR = {};
     public static final int MINOR = {};
     public static final int PATCH = {};
@@ -117,7 +120,7 @@ public class Version {{
     public static final String STRING = "{}";
 }}
 "#,
-        version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
@@ -142,6 +145,7 @@ fn csharp_output(version: &Version, path: &Path, version_str: &str) -> Result<()
  */
 
 public static class Version {{
+    public const string PREFIX = "{}";
     public const int MAJOR = {};
     public const int MINOR = {};
     public const int PATCH = {};
@@ -149,7 +153,7 @@ public static class Version {{
     public const string STRING = "{}";
 }}
 "#,
-        version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
