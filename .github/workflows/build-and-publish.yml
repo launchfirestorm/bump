@@ -11,58 +11,40 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux builds using Alpine container
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             name_suffix: linux-amd64
             cross_compile: false
-            use_container: true
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             name_suffix: linux-arm64
             cross_compile: true
-            use_container: true
-          
-          # Windows builds
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             name_suffix: windows-amd64
             cross_compile: false
-            use_container: false
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             name_suffix: windows-arm64
             cross_compile: true
-            use_container: false
-          
-          # macOS builds
           - os: macos-latest
             target: x86_64-apple-darwin
             name_suffix: macos-amd64
             cross_compile: false
-            use_container: false
           - os: macos-latest
             target: aarch64-apple-darwin
             name_suffix: macos-arm64
             cross_compile: true
-            use_container: false
 
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.use_container == true && 'rust:alpine' || '' }}
     
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Rust (for non-container builds)
-      if: matrix.use_container == false
+    - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ matrix.target }}
-
-    - name: Add target
-      if: matrix.use_container == true
-      run: |
-        rustup target add ${{ matrix.target }}
 
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
@@ -72,17 +54,6 @@ jobs:
       run: cargo test --release --target ${{ matrix.target }}
 
     - name: Prepare binary for upload
-      if: matrix.use_container == true
-      shell: sh
-      run: |
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          cp target/${{ matrix.target }}/release/bump.exe bump-${{ matrix.name_suffix }}.exe
-        else
-          cp target/${{ matrix.target }}/release/bump bump-${{ matrix.name_suffix }}
-        fi
-
-    - name: Prepare binary for upload
-      if: matrix.use_container == false
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
@@ -114,7 +85,6 @@ jobs:
     - name: Prepare release files
       run: |
         mkdir -p ./release
-        # Copy all binaries to release directory
         find ./artifacts -name "bump-*" -type f -exec cp {} ./release/ \;
         ls -la ./release/
 
@@ -126,5 +96,4 @@ jobs:
         draft: false
         prerelease: false
       env:
-        GITHUB_TOKEN: ${{ secrets.FSTORM_PRIVATE_ACCESS_TOKEN }}
-    
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

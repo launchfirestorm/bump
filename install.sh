@@ -1,4 +1,20 @@
 #!/bin/bash
+# 
+# Bump Installer - Cross Platform Installation Script
+# 
+# This script downloads and installs the latest release of bump
+# from GitHub releases.
+# 
+# Supports: Linux (amd64/arm64), macOS (amd64/arm64), Windows (amd64/arm64)
+# 
+# Usage: 
+#   curl -sSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh | bash
+#   
+# Or download and run:
+#   wget https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh
+#   chmod +x install.sh
+#   ./install.sh
+#
 set -e
 
 REPO="launchfirestorm/bump"
@@ -17,13 +33,17 @@ error() {
   exit 1
 }
 
-check_github_token() {
-  [[ -z "$GH_TOKEN" ]] && error "GH_TOKEN required. Set: export GH_TOKEN=your_token"
-  info "GitHub private access token found"
-}
-
-github_api_call() {
-  curl -sSL -H "Authorization: token $GH_TOKEN" "$1"
+get_latest_release_tag() {
+  # Try to get the latest release tag from GitHub redirect
+  local tag
+  tag=$(curl -sSL -w '%{redirect_url}' -o /dev/null "https://github.com/${REPO}/releases/latest" | grep -o 'tag/[^"]*' | cut -d'/' -f2)
+  
+  # Fallback: scrape the releases page directly
+  if [[ -z "$tag" ]]; then
+    tag=$(curl -sSL "https://github.com/${REPO}/releases" | grep -o 'releases/tag/[^"]*' | head -1 | cut -d'/' -f3)
+  fi
+  
+  echo "$tag"
 }
 
 detect_os() {
@@ -95,20 +115,19 @@ install_bump() {
 
   info "Downloading $asset_name..."
 
-  local release_data
-  release_data=$(github_api_call "https://api.github.com/repos/${REPO}/releases/latest") || error "Failed to fetch release data"
+  # Get the latest release tag
+  local tag_name
+  tag_name=$(get_latest_release_tag) || error "Failed to fetch latest release information"
   
-  local asset_id
+  [[ -z "$tag_name" ]] && error "Could not find latest release tag"
+  
+  info "Latest release: $tag_name"
 
-  if command -v jq >/dev/null 2>&1; then
-    asset_id=$(echo "$release_data" | jq -r ".assets[] | select(.name==\"$asset_name\") | .id")
-  else
-    asset_id=$(echo "$release_data" | grep -A 2 "\"name\": \"$asset_name\"" | grep '"id":' | sed -E 's/.*"id": ([0-9]+).*/\1/')
-  fi
-
-  [[ -z "$asset_id" || "$asset_id" == "null" ]] && error "Asset $asset_name not found in latest release"
-
-  curl -sSL -H "Authorization: token $GH_TOKEN" -H "Accept: application/octet-stream" -o "$temp_file" "https://api.github.com/repos/${REPO}/releases/assets/$asset_id" || error "Download failed"
+  # Construct direct download URL
+  local download_url="https://github.com/${REPO}/releases/download/${tag_name}/${asset_name}"
+  info "Downloading from: $download_url"
+  
+  curl -sSL -o "$temp_file" "$download_url" || error "Download failed"
 
   [[ ! -s "$temp_file" ]] && error "Downloaded file is empty"
 
@@ -203,9 +222,9 @@ verify_installation() {
 main() {
   echo "🚀 Bump Installer - Cross Platform"
   echo "Supports: Linux (amd64/arm64), macOS (amd64/arm64), Windows (amd64/arm64)"
+  echo "Downloading from public GitHub releases - no authentication required"
   echo ""
   
-  check_github_token
   detect_os
   detect_arch
   check_dependencies
