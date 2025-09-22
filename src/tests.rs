@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 #[test]
 fn version_default() {
-    let path = PathBuf::from("test.bumpfile");
+    let path = PathBuf::from("test.toml");
     let version = Version::default(&path);
 
     assert_eq!(version.major, 0);
@@ -13,14 +13,34 @@ fn version_default() {
     assert_eq!(version.patch, 0);
     assert_eq!(version.candidate, 0);
     assert_eq!(version.path, path);
+    assert_eq!(version.prefix, "v");
+    assert_eq!(version.config.candidate.promotion, "minor");
+    assert_eq!(version.config.candidate.delimiter, "-rc");
+    assert_eq!(version.config.development.promotion, "git_sha");
+    assert_eq!(version.config.development.delimiter, "+");
 }
 
 #[test]
 fn version_from_file_valid() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "PREFIX=prefix_\nMAJOR=1\nMINOR=2\nPATCH=3\nCANDIDATE=0\n";
+    let content = r#"prefix = "prefix_"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
@@ -36,71 +56,131 @@ fn version_from_file_valid() {
 #[test]
 fn version_from_file_invalid_major() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "MAJOR=invalid\nMINOR=2\nPATCH=3\nCANDIDATE=0\n";
+    let content = r#"prefix = "v"
+
+[version]
+major = "invalid"
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "invalid MAJOR value"),
-        _ => panic!("Expected ParseError"),
+        BumpError::TomlError(_) => (), // Expected TOML parsing error
+        _ => panic!("Expected TomlError"),
     }
 }
 
 #[test]
 fn version_from_file_invalid_minor() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "MAJOR=1\nMINOR=invalid\nPATCH=3\nCANDIDATE=0\n";
+    let content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = "invalid"
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "invalid MINOR value"),
-        _ => panic!("Expected ParseError"),
+        BumpError::TomlError(_) => (), // Expected TOML parsing error
+        _ => panic!("Expected TomlError"),
     }
 }
 
 #[test]
 fn version_from_file_invalid_patch() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "MAJOR=1\nMINOR=2\nPATCH=invalid\nCANDIDATE=0\n";
+    let content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = "invalid"
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "invalid PATCH value"),
-        _ => panic!("Expected ParseError"),
+        BumpError::TomlError(_) => (), // Expected TOML parsing error
+        _ => panic!("Expected TomlError"),
     }
 }
 
 #[test]
 fn version_from_file_invalid_candidate() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "MAJOR=1\nMINOR=2\nPATCH=3\nCANDIDATE=invalid\n";
+    let content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = "invalid"
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::ParseError(field) => assert_eq!(field, "invalid CANDIDATE value"),
-        _ => panic!("Expected ParseError"),
+        BumpError::TomlError(_) => (), // Expected TOML parsing error
+        _ => panic!("Expected TomlError"),
     }
 }
 
 #[test]
 fn version_from_file_missing_file() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("nonexistent.bumpfile");
+    let file_path = temp_dir.path().join("nonexistent.toml");
 
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
@@ -113,7 +193,25 @@ fn version_from_file_missing_file() {
 #[test]
 fn version_to_file() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
+
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
 
     let version = Version {
         prefix: "v".to_string(),
@@ -122,27 +220,47 @@ fn version_to_file() {
         patch: 3,
         candidate: 4,
         path: file_path.clone(),
+        config,
     };
 
     version.to_file().unwrap();
 
     let content = fs::read_to_string(&file_path).unwrap();
-    assert!(content.contains("MAJOR=1"));
-    assert!(content.contains("MINOR=2"));
-    assert!(content.contains("PATCH=3"));
-    assert!(content.contains("CANDIDATE=4"));
+    assert!(content.contains("major = 1"));
+    assert!(content.contains("minor = 2"));
+    assert!(content.contains("patch = 3"));
+    assert!(content.contains("candidate = 4"));
     assert!(content.contains("https://github.com/launchfirestorm/bump"));
 }
 
 #[test]
 fn version_to_string_point() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 0,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 0,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     let version_string = version.to_string(&BumpType::Point(PointType::Patch));
@@ -151,13 +269,32 @@ fn version_to_string_point() {
 
 #[test]
 fn version_to_string_candidate() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     let version_string = version.to_string(&BumpType::Candidate);
@@ -169,13 +306,32 @@ fn version_to_header() {
     let temp_dir = TempDir::new().unwrap();
     let header_path = temp_dir.path().join("version.h");
 
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     crate::lang::output_file(
@@ -258,7 +414,25 @@ fn bump_error_from_io_error() {
 #[test]
 fn version_round_trip() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
+
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 5,
+            minor: 10,
+            patch: 15,
+            candidate: 2,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
 
     let original_version = Version {
         prefix: "v".to_string(),
@@ -267,6 +441,7 @@ fn version_round_trip() {
         patch: 15,
         candidate: 2,
         path: file_path.clone(),
+        config,
     };
 
     // Write to file
@@ -286,9 +461,27 @@ fn version_round_trip() {
 #[test]
 fn version_file_with_comments() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "# This is a comment\nPREFIX=\nMAJOR=1\n# Another comment\nMINOR=2\nPATCH=3\nCANDIDATE=0\n# End comment";
+    let content = r#"# This is a comment
+prefix = ""
+
+[version]
+major = 1
+# Another comment
+minor = 2
+patch = 3
+candidate = 0
+# End comment
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
@@ -302,9 +495,24 @@ fn version_file_with_comments() {
 #[test]
 fn version_file_with_whitespace() {
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("version.bumpfile");
+    let file_path = temp_dir.path().join("version.toml");
 
-    let content = "  PREFIX=  \n\tMAJOR= 1 \nMINOR= 2 \nPATCH= 3 \nCANDIDATE= 0 \n";
+    let content = r#"prefix = ""
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
@@ -343,13 +551,32 @@ fn commit_sha() {
 
 #[test]
 fn version_bump_major() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     version.bump(&BumpType::Point(PointType::Major)).unwrap();
@@ -363,13 +590,32 @@ fn version_bump_major() {
 
 #[test]
 fn version_bump_minor() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     version.bump(&BumpType::Point(PointType::Minor)).unwrap();
@@ -383,13 +629,32 @@ fn version_bump_minor() {
 
 #[test]
 fn version_bump_patch() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
@@ -403,13 +668,32 @@ fn version_bump_patch() {
 
 #[test]
 fn version_bump_candidate() {
+    let config = BumpConfig {
+        prefix: "prefix_".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "prefix_".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     version.bump(&BumpType::Candidate).unwrap();
@@ -417,19 +701,38 @@ fn version_bump_candidate() {
     assert_eq!(version.prefix, "prefix_");
     assert_eq!(version.major, 1);
     assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
+    assert_eq!(version.patch, 3); // Patch is unchanged when incrementing existing candidate
     assert_eq!(version.candidate, 5);
 }
 
 #[test]
 fn version_bump_candidate_existing_value() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     // Test candidate bump - should increment candidate
@@ -437,19 +740,38 @@ fn version_bump_candidate_existing_value() {
     assert_eq!(version.prefix, "v");
     assert_eq!(version.major, 1); // Unchanged
     assert_eq!(version.minor, 2); // Unchanged  
-    assert_eq!(version.patch, 0); // Reset to 0
+    assert_eq!(version.patch, 3); // Unchanged when incrementing existing candidate
     assert_eq!(version.candidate, 5); // Incremented
 }
 
 #[test]
 fn version_bump_sequence() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 0,
+            patch: 0,
+            candidate: 0,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 0,
         patch: 0,
         candidate: 0,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     // Bump patch
@@ -504,13 +826,32 @@ fn point_types() {
 
 #[test]
 fn version_bump_patch_with_candidate() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let mut version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
@@ -525,13 +866,32 @@ fn version_bump_patch_with_candidate() {
 
 #[test]
 fn version_to_string_candidate_with_value() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     // Candidate should show the -rc suffix
@@ -540,13 +900,32 @@ fn version_to_string_candidate_with_value() {
 
 #[test]
 fn version_to_string_none_tagged_without_candidate() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 0,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 0,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     assert_eq!(
@@ -557,13 +936,32 @@ fn version_to_string_none_tagged_without_candidate() {
 
 #[test]
 fn version_to_string_point_with_candidate() {
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+    
     let version = Version {
         prefix: "v".to_string(),
         major: 1,
         minor: 2,
         patch: 3,
         candidate: 4,
-        path: PathBuf::from("test.bumpfile"),
+        path: PathBuf::from("test.toml"),
+        config,
     };
 
     // Point release ignores candidate and shows just major.minor.patch
