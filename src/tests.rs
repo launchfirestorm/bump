@@ -970,3 +970,65 @@ fn version_to_string_point_with_candidate() {
         "v1.2.3"
     );
 }
+
+#[test]
+fn version_preserves_comments_when_writing() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    // Create a TOML file with comments
+    let original_content = r#"#  ____  __  __  __  __  ____ 
+# (  _ \(  )(  )(  \/  )(  _ \
+#  ) _ < )(__)(  )    (  )___/
+# (____/(______)(_/\/\_)(__)  
+#
+# https://github.com/launchfirestorm/bump
+
+prefix = "v"
+
+# NOTE: This section is modified by the bump command
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"  # ["minor", "major", "patch"]
+delimiter = "-rc"
+
+# promotion strategies:
+#  - git_sha ( 7 char sha1 of the current commit )
+#  - branch ( append branch name )
+#  - full ( <branch>_<sha1> )
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, original_content).unwrap();
+
+    // Load the version and modify it
+    let mut version = Version::from_file(&file_path).unwrap();
+    version.major = 2;
+    version.minor = 0;
+    version.patch = 0;
+
+    // Write it back
+    version.to_file().unwrap();
+
+    // Read the file back and check that comments are preserved
+    let updated_content = fs::read_to_string(&file_path).unwrap();
+    
+    // Check that comments are preserved
+    assert!(updated_content.contains("# https://github.com/launchfirestorm/bump"));
+    assert!(updated_content.contains("# NOTE: This section is modified by the bump command"));
+    assert!(updated_content.contains("# promotion strategies:"));
+    assert!(updated_content.contains("#  - git_sha ( 7 char sha1 of the current commit )"));
+    assert!(updated_content.contains("#  - branch ( append branch name )"));
+    assert!(updated_content.contains("#  - full ( <branch>_<sha1> )"));
+    
+    // Check that values are updated
+    assert!(updated_content.contains("major = 2"));
+    assert!(updated_content.contains("minor = 0"));
+    assert!(updated_content.contains("patch = 0"));
+}

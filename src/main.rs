@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, ExitCode},
 };
+use toml_edit::{DocumentMut, value};
 
 use crate::lang::Language;
 
@@ -162,19 +163,9 @@ impl Version {
     }
 
     fn to_file(&self) -> Result<(), BumpError> {
-        // Update the config with current version values
-        let mut updated_config = self.config.clone();
-        updated_config.prefix = self.prefix.clone();
-        updated_config.version.major = self.major;
-        updated_config.version.minor = self.minor;
-        updated_config.version.patch = self.patch;
-        updated_config.version.candidate = self.candidate;
-
-        let toml_content = toml::to_string_pretty(&updated_config)
-            .map_err(|e| BumpError::ParseError(format!("Failed to serialize TOML: {}", e)))?;
-        
-        // Add header comment to the TOML
-        let content = format!(
+        // Try to read existing file to preserve comments and formatting
+        let original_content = fs::read_to_string(&self.path).unwrap_or_else(|_| {
+            // If file doesn't exist, create default structure with header
             r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
 #  ) _ < )(__)(  )    (  )___/
@@ -182,12 +173,58 @@ impl Version {
 #
 # https://github.com/launchfirestorm/bump
 
-{}
-"#,
-            toml_content
-        );
+prefix = "v"
 
-        match fs::write(self.path.as_path(), content) {
+# NOTE: This section is modified by the bump command
+[version]
+major = 0
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"  # ["minor", "major", "patch"]
+delimiter = "-rc"
+
+# promotion strategies:
+#  - git_sha ( 7 char sha1 of the current commit )
+#  - branch ( append branch name )
+#  - full ( <branch>_<sha1> )
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#.to_string()
+        });
+
+        // Parse the TOML document while preserving formatting
+        let mut doc = original_content.parse::<DocumentMut>()
+            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {}", e)))?;
+
+        // Update the values while preserving structure and comments
+        doc["prefix"] = value(&self.prefix);
+        doc["version"]["major"] = value(self.major as i64);
+        doc["version"]["minor"] = value(self.minor as i64);
+        doc["version"]["patch"] = value(self.patch as i64);
+        doc["version"]["candidate"] = value(self.candidate as i64);
+
+        // Update candidate section if it exists
+        if let Some(candidate_table) = doc.get_mut("candidate") {
+            if let Some(table) = candidate_table.as_table_mut() {
+                table["promotion"] = value(&self.config.candidate.promotion);
+                table["delimiter"] = value(&self.config.candidate.delimiter);
+            }
+        }
+
+        // Update development section if it exists  
+        if let Some(dev_table) = doc.get_mut("development") {
+            if let Some(table) = dev_table.as_table_mut() {
+                table["promotion"] = value(&self.config.development.promotion);
+                table["delimiter"] = value(&self.config.development.delimiter);
+            }
+        }
+
+        // Write the updated document back to file
+        match fs::write(self.path.as_path(), doc.to_string()) {
             Ok(_) => Ok(()),
             Err(err) => Err(BumpError::IoError(err)),
         }
