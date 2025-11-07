@@ -101,6 +101,7 @@ pub fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
             Ok(parts) if parts.len() == 3 => {
                 let config = Config {
                     prefix: "v".to_string(),
+                    timestamp: None,
                     version: VersionSection {
                         major: parts[0],
                         minor: parts[1],
@@ -119,6 +120,7 @@ pub fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
 
                 Ok(Version {
                     prefix: "v".to_string(),
+                    timestamp: None,
                     major: parts[0],
                     minor: parts[1],
                     patch: parts[2],

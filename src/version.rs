@@ -30,6 +30,7 @@ pub struct DevelopmentSection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub prefix: String,
+    pub timestamp: Option<String>,
     pub version: VersionSection,
     pub candidate: CandidateSection,
     pub development: DevelopmentSection,
@@ -39,6 +40,7 @@ pub struct Config {
 #[derive(Debug)]
 pub struct Version {
     pub prefix: String,
+    pub timestamp: Option<String>,
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
@@ -47,10 +49,16 @@ pub struct Version {
     pub config: Config,
 }
 
+fn get_time(format: &Option<String>) -> Option<String> {
+    let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::west_opt(0).unwrap());
+    format.as_ref().map(|fmt| now.format(fmt).to_string())
+}
+
 impl Version {
     pub fn default(path: &Path) -> Self {
         let config = Config {
             prefix: "v".to_string(),
+            timestamp: None,
             version: VersionSection {
                 major: 0,
                 minor: 1,
@@ -69,6 +77,7 @@ impl Version {
 
         Version {
             prefix: config.prefix.clone(),
+            timestamp: None,
             major: config.version.major,
             minor: config.version.minor,
             patch: config.version.patch,
@@ -110,6 +119,7 @@ impl Version {
 
         Ok(Version {
             prefix: config.prefix.clone(),
+            timestamp: get_time(&config.timestamp),
             major: config.version.major,
             minor: config.version.minor,
             patch: config.version.patch,
@@ -131,6 +141,7 @@ impl Version {
 # https://github.com/launchfirestorm/bump
 
 prefix = "v"
+timestamp = "%Y-%m-%d %H:%M:%S"   # strftime syntax
 
 # NOTE: This section is modified by the bump command
 [version]
@@ -237,6 +248,7 @@ delimiter = "+"
 
         let default_config = Config {
             prefix: prefix.clone(),
+            timestamp: None,
             version: VersionSection {
                 major,
                 minor,
@@ -255,6 +267,7 @@ delimiter = "+"
 
         Ok(Version {
             prefix,
+            timestamp: None,
             major,
             minor,
             patch,
@@ -265,6 +278,7 @@ delimiter = "+"
     }
 
     pub fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
+        self.timestamp = get_time(&self.config.timestamp);
         match bump_type {
             BumpType::Prefix(prefix) => {
                 self.prefix = prefix.clone();

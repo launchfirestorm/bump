@@ -51,10 +51,16 @@ fn c_output(version: &Version, path: &Path, version_str: &str) -> Result<(), Bum
 #define VERSION_PATCH {}
 #define VERSION_CANDIDATE {}
 #define VERSION_STRING "{}"
+{}
 
 #endif /* BUMP_VERSION_H */
 "#,
-        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str, 
+        if version.timestamp.is_none() {
+            "".to_string()
+        } else {
+            format!("#define VERSION_TIMESTAMP \"{}\"\n", version.timestamp.as_ref().unwrap())
+        }
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
