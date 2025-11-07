@@ -5,15 +5,13 @@ use tempfile::TempDir;
 
 // Import types from bump module
 use crate::bump::{
-    BumpType, PointType, BumpError,
-    resolve_path, ensure_directory_exists,
-    get_git_commit_sha, get_git_branch,
+    BumpError, BumpType, PointType, ensure_directory_exists, get_git_branch, get_git_commit_sha,
+    resolve_path,
 };
 
 // Import types from version module
 use crate::version::{
-    Version, Config as BumpConfig, 
-    VersionSection, CandidateSection, DevelopmentSection,
+    CandidateSection, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
 };
 
 #[test]
@@ -595,7 +593,7 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
-    
+
     // When timestamp config is not set, it should be None
     assert!(version.config.timestamp.is_none());
     assert!(version.timestamp.is_none());
@@ -626,15 +624,15 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
-    
+
     // Config should have the format string
     assert!(version.config.timestamp.is_some());
     assert_eq!(version.config.timestamp.as_ref().unwrap(), "%Y-%m-%d");
-    
+
     // Timestamp should be generated during from_file
     assert!(version.timestamp.is_some());
     let timestamp = version.timestamp.as_ref().unwrap();
-    
+
     // Should match YYYY-MM-DD format
     assert_eq!(timestamp.len(), 10);
     assert!(timestamp.contains('-'));
@@ -665,10 +663,10 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
-    
+
     assert!(version.timestamp.is_some());
     let timestamp = version.timestamp.as_ref().unwrap();
-    
+
     // Should contain ISO8601 format elements
     assert!(timestamp.contains('T'));
     assert!(timestamp.contains(':'));
@@ -699,10 +697,10 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
-    
+
     assert!(version.timestamp.is_some());
     let timestamp = version.timestamp.as_ref().unwrap();
-    
+
     // Should match compact format YYYYMMDD_HHMMSS
     assert_eq!(timestamp.len(), 15); // 8 digits + 1 underscore + 6 digits
     assert!(timestamp.contains('_'));
@@ -734,15 +732,15 @@ delimiter = "+"
 
     let mut version = Version::from_file(&file_path).unwrap();
     let original_timestamp = version.timestamp.clone();
-    
+
     assert!(original_timestamp.is_some());
-    
+
     // Sleep briefly to ensure timestamp difference
     std::thread::sleep(std::time::Duration::from_millis(1100));
-    
+
     // Bump should update the timestamp
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
-    
+
     assert!(version.timestamp.is_some());
     // Timestamps should be different (assuming they have at least second precision)
     assert_ne!(version.timestamp, original_timestamp);
@@ -774,17 +772,11 @@ delimiter = "+"
     fs::write(&config_path, config_content).unwrap();
 
     let version = Version::from_file(&config_path).unwrap();
-    
-    crate::lang::output_file(
-        &crate::lang::Language::C,
-        &version,
-        "v1.2.3",
-        &output_path,
-    )
-    .unwrap();
+
+    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
 
     let header_content = fs::read_to_string(&output_path).unwrap();
-    
+
     // Should contain VERSION_TIMESTAMP define
     assert!(header_content.contains("#define VERSION_TIMESTAMP"));
     assert!(header_content.contains(version.timestamp.as_ref().unwrap().as_str()));
@@ -815,19 +807,13 @@ delimiter = "+"
     fs::write(&config_path, config_content).unwrap();
 
     let version = Version::from_file(&config_path).unwrap();
-    
+
     assert!(version.timestamp.is_none());
-    
-    crate::lang::output_file(
-        &crate::lang::Language::C,
-        &version,
-        "v1.2.3",
-        &output_path,
-    )
-    .unwrap();
+
+    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
 
     let header_content = fs::read_to_string(&output_path).unwrap();
-    
+
     // Should NOT contain VERSION_TIMESTAMP define when timestamp is None
     assert!(!header_content.contains("#define VERSION_TIMESTAMP"));
 }
@@ -874,8 +860,11 @@ fn test_timestamp_roundtrip() {
     let read_version = Version::from_file(&file_path).unwrap();
 
     // Config timestamp format should be preserved
-    assert_eq!(read_version.config.timestamp, Some("%Y-%m-%d %H:%M:%S".to_string()));
-    
+    assert_eq!(
+        read_version.config.timestamp,
+        Some("%Y-%m-%d %H:%M:%S".to_string())
+    );
+
     // Timestamp value should be generated (will be different from original)
     assert!(read_version.timestamp.is_some());
 }
@@ -915,13 +904,13 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let mut version = Version::from_file(&file_path).unwrap();
-    
+
     // Bump to candidate should also update timestamp
     version.bump(&BumpType::Candidate).unwrap();
-    
+
     assert!(version.timestamp.is_some());
     assert_eq!(version.candidate, 1);
-    
+
     // Timestamp should be 8 digits (YYYYMMDD)
     let timestamp = version.timestamp.as_ref().unwrap();
     assert_eq!(timestamp.len(), 8);
@@ -953,12 +942,12 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let mut version = Version::from_file(&file_path).unwrap();
-    
+
     assert_eq!(version.candidate, 1);
-    
+
     // Release should update timestamp
     version.bump(&BumpType::Release).unwrap();
-    
+
     assert!(version.timestamp.is_some());
     assert_eq!(version.candidate, 0);
 }
@@ -988,10 +977,10 @@ delimiter = "+"
     fs::write(&file_path, content).unwrap();
 
     let version = Version::from_file(&file_path).unwrap();
-    
+
     assert!(version.timestamp.is_some());
     let timestamp = version.timestamp.as_ref().unwrap();
-    
+
     // Should contain month name and comma
     assert!(timestamp.contains(','));
     // Should contain a space
@@ -1529,13 +1518,7 @@ delimiter = "+"
 
     // Load version and generate C header
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(
-        &crate::lang::Language::C,
-        &version,
-        "v1.2.3",
-        &output_path,
-    )
-    .unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
 
     // Verify C header content
     let header_content = fs::read_to_string(&output_path).unwrap();
@@ -1715,7 +1698,7 @@ delimiter = "+"
 "#;
     fs::write(&config_path, config_content_sha).unwrap();
     let version_sha = Version::from_file(&config_path).unwrap();
-    
+
     // Test branch strategy
     let config_content_branch = r#"prefix = "v"
 
@@ -1735,7 +1718,7 @@ delimiter = "+"
 "#;
     fs::write(&config_path, config_content_branch).unwrap();
     let version_branch = Version::from_file(&config_path).unwrap();
-    
+
     // Test full strategy
     let config_content_full = r#"prefix = "v"
 
@@ -1760,7 +1743,7 @@ delimiter = "+"
     assert_eq!(version_sha.config.development.promotion, "git_sha");
     assert_eq!(version_branch.config.development.promotion, "branch");
     assert_eq!(version_full.config.development.promotion, "full");
-    
+
     // Verify delimiters
     assert_eq!(version_sha.config.development.delimiter, "+");
     assert_eq!(version_branch.config.development.delimiter, "+");

@@ -1,4 +1,3 @@
-
 use clap::{Arg, Command};
 
 pub fn cli() -> Command {

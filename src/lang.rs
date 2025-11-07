@@ -55,12 +55,19 @@ fn c_output(version: &Version, path: &Path, version_str: &str) -> Result<(), Bum
 
 #endif /* BUMP_VERSION_H */
 "#,
-        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str, 
-        if version.timestamp.is_none() {
-            "".to_string()
-        } else {
-            format!("#define VERSION_TIMESTAMP \"{}\"\n", version.timestamp.as_ref().unwrap())
-        }
+        version.prefix,
+        version.major,
+        version.minor,
+        version.patch,
+        version.candidate,
+        version_str,
+        version
+            .timestamp
+            .as_ref()
+            .map_or(String::new(), |ts| format!(
+                "#define VERSION_TIMESTAMP \"{}\"\n",
+                ts
+            ))
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
@@ -91,9 +98,16 @@ const (
 	PATCH     = {}
 	CANDIDATE = {}
 	STRING    = "{}"
+    TIMESTAMP = "{}"
 )
 "#,
-        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix,
+        version.major,
+        version.minor,
+        version.patch,
+        version.candidate,
+        version_str,
+        version.timestamp.as_deref().unwrap_or(&String::new())
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
@@ -124,9 +138,16 @@ public class Version {{
     public static final int PATCH = {};
     public static final int CANDIDATE = {};
     public static final String STRING = "{}";
+    public static final String TIMESTAMP = "{}";
 }}
 "#,
-        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix,
+        version.major,
+        version.minor,
+        version.patch,
+        version.candidate,
+        version_str,
+        version.timestamp.as_deref().unwrap_or(&String::new())
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;
@@ -157,9 +178,16 @@ public static class Version {{
     public const int PATCH = {};
     public const int CANDIDATE = {};
     public const string STRING = "{}";
+    public const string TIMESTAMP = "{}";
 }}
 "#,
-        version.prefix, version.major, version.minor, version.patch, version.candidate, version_str
+        version.prefix,
+        version.major,
+        version.minor,
+        version.patch,
+        version.candidate,
+        version_str,
+        version.timestamp.as_deref().unwrap_or(&String::new())
     );
 
     fs::write(path, content).map_err(BumpError::IoError)?;

@@ -1,3 +1,4 @@
+use crate::bump::{BumpError, BumpType, PointType};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -5,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use toml_edit::{DocumentMut, value};
-use crate::bump::{BumpError, BumpType, PointType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionSection {
@@ -35,7 +35,6 @@ pub struct Config {
     pub candidate: CandidateSection,
     pub development: DevelopmentSection,
 }
-
 
 #[derive(Debug)]
 pub struct Version {
@@ -104,7 +103,10 @@ impl Version {
         match config.development.promotion {
             ref str if str == "git_sha" || str == "branch" || str == "full" => (),
             _ => {
-                println!("invalid development promotion strategy: {}", config.development.promotion);
+                println!(
+                    "invalid development promotion strategy: {}",
+                    config.development.promotion
+                );
                 println!("defaulting to git_sha");
             }
         }
@@ -112,7 +114,10 @@ impl Version {
         match config.candidate.promotion {
             ref str if str == "minor" || str == "major" || str == "patch" => (),
             _ => {
-                println!("invalid candidate promotion strategy: {}", config.candidate.promotion);
+                println!(
+                    "invalid candidate promotion strategy: {}",
+                    config.candidate.promotion
+                );
                 println!("defaulting to minor");
             }
         }
@@ -179,17 +184,19 @@ delimiter = "+"
 
         // Update candidate section if it exists
         if let Some(candidate_table) = doc.get_mut("candidate")
-            && let Some(table) = candidate_table.as_table_mut() {
-                table["promotion"] = value(&self.config.candidate.promotion);
-                table["delimiter"] = value(&self.config.candidate.delimiter);
-            }
+            && let Some(table) = candidate_table.as_table_mut()
+        {
+            table["promotion"] = value(&self.config.candidate.promotion);
+            table["delimiter"] = value(&self.config.candidate.delimiter);
+        }
 
         // Update development section if it exists
         if let Some(dev_table) = doc.get_mut("development")
-            && let Some(table) = dev_table.as_table_mut() {
-                table["promotion"] = value(&self.config.development.promotion);
-                table["delimiter"] = value(&self.config.development.delimiter);
-            }
+            && let Some(table) = dev_table.as_table_mut()
+        {
+            table["promotion"] = value(&self.config.development.promotion);
+            table["delimiter"] = value(&self.config.development.delimiter);
+        }
 
         // Write the updated document back to file
         match fs::write(self.path.as_path(), doc.to_string()) {

@@ -1,11 +1,11 @@
-use clap::{ArgMatches};
+use crate::lang::{self, Language};
+use crate::version::{CandidateSection, Config, DevelopmentSection, Version, VersionSection};
+use clap::ArgMatches;
 use std::{
     fmt, fs, io,
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
 };
-use crate::version::{Version, Config, VersionSection, CandidateSection, DevelopmentSection};
-use crate::lang::{self, Language};
 
 pub enum PointType {
     Major,
@@ -76,9 +76,10 @@ pub fn resolve_path(input_path: &str) -> PathBuf {
 
 pub fn ensure_directory_exists(path: &Path) -> Result<(), BumpError> {
     if let Some(parent) = path.parent()
-        && !parent.exists() {
-            fs::create_dir_all(parent).map_err(BumpError::IoError)?;
-        }
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent).map_err(BumpError::IoError)?;
+    }
     Ok(())
 }
 

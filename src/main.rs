@@ -1,14 +1,13 @@
-use std::process::ExitCode;
-use crate::lang::Language;
 use crate::bump::BumpError;
+use crate::lang::Language;
+use std::process::ExitCode;
 
 mod bump;
 mod cli;
 mod lang;
-mod version;
 #[cfg(test)]
 mod tests;
-
+mod version;
 
 fn egress(result: Result<(), BumpError>) -> ExitCode {
     if let Err(err) = result {
