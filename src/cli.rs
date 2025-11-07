@@ -86,7 +86,7 @@ pub fn cli() -> Command {
                 .long("print")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
-                .help("Print version from PATH, without a newline. Useful in CI/CD applications"),
+                .help("Print version from PATH, without a newline"),
         )
         .arg(
             Arg::new("print-base")
@@ -94,7 +94,14 @@ pub fn cli() -> Command {
                 .long("print-base")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
-                .help("Print base version (no candidate suffix) from PATH, without a newline. Useful for CMake"),
+                .help("Print base version (no candidate suffix) from PATH, without a newline"),
+        )
+        .arg(
+            Arg::new("print-with-timestamp")
+                .long("print-with-timestamp")
+                .action(clap::ArgAction::SetTrue)
+                .group("print-group")
+                .help("Print version with timestamp from PATH, without a newline"),
         )
         .arg(
             Arg::new("prefix")
