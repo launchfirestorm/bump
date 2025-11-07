@@ -1,4 +1,4 @@
-use crate::{BumpError, Version};
+use crate::{bump::BumpError, version::Version};
 use std::fs;
 use std::path::Path;
 

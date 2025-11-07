@@ -1,7 +1,20 @@
-use super::*;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+// Import types from bump module
+use crate::bump::{
+    BumpType, PointType, BumpError,
+    resolve_path, ensure_directory_exists,
+    get_git_commit_sha, get_git_branch,
+};
+
+// Import types from version module
+use crate::version::{
+    Version, Config as BumpConfig, 
+    VersionSection, CandidateSection, DevelopmentSection,
+};
 
 #[test]
 fn version_default() {
@@ -374,11 +387,11 @@ fn resolve_path_relative() {
 }
 
 #[test]
-fn ensure_directory_exists() {
+fn test_ensure_directory_exists() {
     let temp_dir = TempDir::new().unwrap();
     let nested_path = temp_dir.path().join("nested").join("deep").join("file.txt");
 
-    super::ensure_directory_exists(&nested_path).unwrap();
+    ensure_directory_exists(&nested_path).unwrap();
 
     assert!(nested_path.parent().unwrap().exists());
 }
