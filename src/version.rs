@@ -49,7 +49,7 @@ pub struct Version {
 }
 
 fn get_time(format: &Option<String>) -> Option<String> {
-    let now = chrono::Utc::now().with_timezone(&chrono::FixedOffset::west_opt(0).unwrap());
+    let now = chrono::Utc::now();
     format.as_ref().map(|fmt| now.format(fmt).to_string())
 }
 
@@ -146,7 +146,7 @@ impl Version {
 # https://github.com/launchfirestorm/bump
 
 prefix = "v"
-timestamp = "%Y-%m-%d %H:%M:%S"   # strftime syntax
+timestamp = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax
 
 # NOTE: This section is modified by the bump command
 [version]

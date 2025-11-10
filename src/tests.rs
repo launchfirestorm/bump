@@ -844,7 +844,7 @@ fn test_timestamp_roundtrip() {
 
     let version = Version {
         prefix: "v".to_string(),
-        timestamp: Some("2025-11-07 12:00:00".to_string()),
+        timestamp: Some("2025-11-07 12:00:00 UTC".to_string()),
         major: 1,
         minor: 2,
         patch: 3,
@@ -862,7 +862,7 @@ fn test_timestamp_roundtrip() {
     // Config timestamp format should be preserved
     assert_eq!(
         read_version.config.timestamp,
-        Some("%Y-%m-%d %H:%M:%S".to_string())
+        Some("%Y-%m-%d %H:%M:%S %Z".to_string())
     );
 
     // Timestamp value should be generated (will be different from original)
