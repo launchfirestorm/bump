@@ -1,7 +1,18 @@
-use super::*;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use tempfile::TempDir;
+
+// Import types from bump module
+use crate::bump::{
+    BumpError, BumpType, PointType, ensure_directory_exists, get_git_branch, get_git_commit_sha,
+    resolve_path,
+};
+
+// Import types from version module
+use crate::version::{
+    CandidateSection, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
+};
 
 #[test]
 fn version_default() {
@@ -197,6 +208,7 @@ fn version_to_file() {
 
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -215,6 +227,7 @@ fn version_to_file() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -237,6 +250,7 @@ fn version_to_file() {
 fn version_to_string_point() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -255,6 +269,7 @@ fn version_to_string_point() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -271,6 +286,7 @@ fn version_to_string_point() {
 fn version_to_string_candidate() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -289,6 +305,7 @@ fn version_to_string_candidate() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -308,6 +325,7 @@ fn version_to_header() {
 
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -326,6 +344,7 @@ fn version_to_header() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -374,11 +393,11 @@ fn resolve_path_relative() {
 }
 
 #[test]
-fn ensure_directory_exists() {
+fn test_ensure_directory_exists() {
     let temp_dir = TempDir::new().unwrap();
     let nested_path = temp_dir.path().join("nested").join("deep").join("file.txt");
 
-    super::ensure_directory_exists(&nested_path).unwrap();
+    ensure_directory_exists(&nested_path).unwrap();
 
     assert!(nested_path.parent().unwrap().exists());
 }
@@ -418,6 +437,7 @@ fn version_round_trip() {
 
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 5,
             minor: 10,
@@ -436,6 +456,7 @@ fn version_round_trip() {
 
     let original_version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 5,
         minor: 10,
         patch: 15,
@@ -549,9 +570,428 @@ fn commit_sha() {
 }
 
 #[test]
+fn test_timestamp_config_none() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    // When timestamp config is not set, it should be None
+    assert!(version.config.timestamp.is_none());
+    assert!(version.timestamp.is_none());
+}
+
+#[test]
+fn test_timestamp_config_with_format() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%Y-%m-%d"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    // Config should have the format string
+    assert!(version.config.timestamp.is_some());
+    assert_eq!(version.config.timestamp.as_ref().unwrap(), "%Y-%m-%d");
+
+    // Timestamp should be generated during from_file
+    assert!(version.timestamp.is_some());
+    let timestamp = version.timestamp.as_ref().unwrap();
+
+    // Should match YYYY-MM-DD format
+    assert_eq!(timestamp.len(), 10);
+    assert!(timestamp.contains('-'));
+}
+
+#[test]
+fn test_timestamp_iso8601_format() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%Y-%m-%dT%H:%M:%S%z"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    assert!(version.timestamp.is_some());
+    let timestamp = version.timestamp.as_ref().unwrap();
+
+    // Should contain ISO8601 format elements
+    assert!(timestamp.contains('T'));
+    assert!(timestamp.contains(':'));
+}
+
+#[test]
+fn test_timestamp_custom_format() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%Y%m%d_%H%M%S"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    assert!(version.timestamp.is_some());
+    let timestamp = version.timestamp.as_ref().unwrap();
+
+    // Should match compact format YYYYMMDD_HHMMSS
+    assert_eq!(timestamp.len(), 15); // 8 digits + 1 underscore + 6 digits
+    assert!(timestamp.contains('_'));
+}
+
+#[test]
+fn test_timestamp_updates_on_bump() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%Y-%m-%d %H:%M:%S"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let mut version = Version::from_file(&file_path).unwrap();
+    let original_timestamp = version.timestamp.clone();
+
+    assert!(original_timestamp.is_some());
+
+    // Sleep briefly to ensure timestamp difference
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    // Bump should update the timestamp
+    version.bump(&BumpType::Point(PointType::Patch)).unwrap();
+
+    assert!(version.timestamp.is_some());
+    // Timestamps should be different (assuming they have at least second precision)
+    assert_ne!(version.timestamp, original_timestamp);
+}
+
+#[test]
+fn test_timestamp_in_c_header_output() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("version.h");
+
+    let config_content = r#"prefix = "v"
+timestamp = "%Y-%m-%d"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    let version = Version::from_file(&config_path).unwrap();
+
+    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
+
+    let header_content = fs::read_to_string(&output_path).unwrap();
+
+    // Should contain VERSION_TIMESTAMP define
+    assert!(header_content.contains("#define VERSION_TIMESTAMP"));
+    assert!(header_content.contains(version.timestamp.as_ref().unwrap().as_str()));
+}
+
+#[test]
+fn test_timestamp_not_in_c_header_when_none() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("version.h");
+
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    let version = Version::from_file(&config_path).unwrap();
+
+    assert!(version.timestamp.is_none());
+
+    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
+
+    let header_content = fs::read_to_string(&output_path).unwrap();
+
+    // Should NOT contain VERSION_TIMESTAMP define when timestamp is None
+    assert!(!header_content.contains("#define VERSION_TIMESTAMP"));
+}
+
+#[test]
+fn test_timestamp_roundtrip() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let config = BumpConfig {
+        prefix: "v".to_string(),
+        timestamp: None,
+        version: VersionSection {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 0,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+
+    let version = Version {
+        prefix: "v".to_string(),
+        timestamp: Some("2025-11-07 12:00:00 UTC".to_string()),
+        major: 1,
+        minor: 2,
+        patch: 3,
+        candidate: 0,
+        path: file_path.clone(),
+        config,
+    };
+
+    // Write to file
+    version.to_file().unwrap();
+
+    // Read back from file
+    let read_version = Version::from_file(&file_path).unwrap();
+
+    // Config timestamp format should be preserved
+    assert_eq!(
+        read_version.config.timestamp,
+        Some("%Y-%m-%d %H:%M:%S %Z".to_string())
+    );
+
+    // Timestamp value should be generated (will be different from original)
+    assert!(read_version.timestamp.is_some());
+}
+
+#[test]
+fn test_timestamp_default_version() {
+    let path = PathBuf::from("test.toml");
+    let version = Version::default(&path);
+
+    // Default version should have no timestamp configured
+    assert!(version.config.timestamp.is_none());
+    assert!(version.timestamp.is_none());
+}
+
+#[test]
+fn test_timestamp_with_candidate_bump() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%Y%m%d"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let mut version = Version::from_file(&file_path).unwrap();
+
+    // Bump to candidate should also update timestamp
+    version.bump(&BumpType::Candidate).unwrap();
+
+    assert!(version.timestamp.is_some());
+    assert_eq!(version.candidate, 1);
+
+    // Timestamp should be 8 digits (YYYYMMDD)
+    let timestamp = version.timestamp.as_ref().unwrap();
+    assert_eq!(timestamp.len(), 8);
+    assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
+}
+
+#[test]
+fn test_timestamp_with_release_bump() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%Y-%m-%d"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 1
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let mut version = Version::from_file(&file_path).unwrap();
+
+    assert_eq!(version.candidate, 1);
+
+    // Release should update timestamp
+    version.bump(&BumpType::Release).unwrap();
+
+    assert!(version.timestamp.is_some());
+    assert_eq!(version.candidate, 0);
+}
+
+#[test]
+fn test_timestamp_human_readable_format() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("version.toml");
+
+    let content = r#"prefix = "v"
+timestamp = "%B %d, %Y"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&file_path, content).unwrap();
+
+    let version = Version::from_file(&file_path).unwrap();
+
+    assert!(version.timestamp.is_some());
+    let timestamp = version.timestamp.as_ref().unwrap();
+
+    // Should contain month name and comma
+    assert!(timestamp.contains(','));
+    // Should contain a space
+    assert!(timestamp.contains(' '));
+}
+
+#[test]
 fn version_bump_major() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -570,6 +1010,7 @@ fn version_bump_major() {
 
     let mut version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -591,6 +1032,7 @@ fn version_bump_major() {
 fn version_bump_minor() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -609,6 +1051,7 @@ fn version_bump_minor() {
 
     let mut version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -630,6 +1073,7 @@ fn version_bump_minor() {
 fn version_bump_patch() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -648,6 +1092,7 @@ fn version_bump_patch() {
 
     let mut version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -669,6 +1114,7 @@ fn version_bump_patch() {
 fn version_bump_candidate() {
     let config = BumpConfig {
         prefix: "prefix_".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -687,6 +1133,7 @@ fn version_bump_candidate() {
 
     let mut version = Version {
         prefix: "prefix_".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -708,6 +1155,7 @@ fn version_bump_candidate() {
 fn version_bump_candidate_existing_value() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -726,6 +1174,7 @@ fn version_bump_candidate_existing_value() {
 
     let mut version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -747,6 +1196,7 @@ fn version_bump_candidate_existing_value() {
 fn version_bump_sequence() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 0,
@@ -765,6 +1215,7 @@ fn version_bump_sequence() {
 
     let mut version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 0,
         patch: 0,
@@ -827,6 +1278,7 @@ fn point_types() {
 fn version_bump_patch_with_candidate() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -845,6 +1297,7 @@ fn version_bump_patch_with_candidate() {
 
     let mut version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -867,6 +1320,7 @@ fn version_bump_patch_with_candidate() {
 fn version_to_string_candidate_with_value() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -885,6 +1339,7 @@ fn version_to_string_candidate_with_value() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -901,6 +1356,7 @@ fn version_to_string_candidate_with_value() {
 fn version_to_string_none_tagged_without_candidate() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -919,6 +1375,7 @@ fn version_to_string_none_tagged_without_candidate() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -937,6 +1394,7 @@ fn version_to_string_none_tagged_without_candidate() {
 fn version_to_string_point_with_candidate() {
     let config = BumpConfig {
         prefix: "v".to_string(),
+        timestamp: None,
         version: VersionSection {
             major: 1,
             minor: 2,
@@ -955,6 +1413,7 @@ fn version_to_string_point_with_candidate() {
 
     let version = Version {
         prefix: "v".to_string(),
+        timestamp: None,
         major: 1,
         minor: 2,
         patch: 3,
@@ -1059,13 +1518,7 @@ delimiter = "+"
 
     // Load version and generate C header
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(
-        &crate::lang::Language::C,
-        &version,
-        "v1.2.3",
-        &output_path,
-    )
-    .unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
 
     // Verify C header content
     let header_content = fs::read_to_string(&output_path).unwrap();
@@ -1245,7 +1698,7 @@ delimiter = "+"
 "#;
     fs::write(&config_path, config_content_sha).unwrap();
     let version_sha = Version::from_file(&config_path).unwrap();
-    
+
     // Test branch strategy
     let config_content_branch = r#"prefix = "v"
 
@@ -1265,7 +1718,7 @@ delimiter = "+"
 "#;
     fs::write(&config_path, config_content_branch).unwrap();
     let version_branch = Version::from_file(&config_path).unwrap();
-    
+
     // Test full strategy
     let config_content_full = r#"prefix = "v"
 
@@ -1290,7 +1743,7 @@ delimiter = "+"
     assert_eq!(version_sha.config.development.promotion, "git_sha");
     assert_eq!(version_branch.config.development.promotion, "branch");
     assert_eq!(version_full.config.development.promotion, "full");
-    
+
     // Verify delimiters
     assert_eq!(version_sha.config.development.delimiter, "+");
     assert_eq!(version_branch.config.development.delimiter, "+");

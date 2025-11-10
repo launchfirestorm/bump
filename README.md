@@ -88,6 +88,7 @@ Bump uses a TOML configuration file (`bump.toml`) to manage versioning settings:
 # https://github.com/launchfirestorm/bump
 
 prefix = "v"
+timestamp = "%Y-%m-%d %H:%M:%S"   # strftime syntax
 
 # NOTE: This section is modified by the bump command
 [version]
@@ -112,6 +113,7 @@ delimiter = "+"
 ### Configuration Options
 
 - **`prefix`**: Version tag prefix (e.g., "v", "release-", or empty string)
+- **`timestamp`**: a strftime syntax string that will be added to output files (see `bump gen`)
 - **`[version]`**: Current version numbers (automatically updated by bump commands)
 - **`[candidate]`**: 
   - `promotion`: Which version component to bump when creating candidates ("minor", "major", "patch")
