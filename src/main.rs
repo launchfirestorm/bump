@@ -48,7 +48,11 @@ fn main() -> ExitCode {
                         return egress(Err(err));
                     }
                 };
-                bump::print(&version, matches.get_flag("print-base"));
+                if matches.get_flag("print-with-timestamp") {
+                    bump::print_with_timestamp(&version);
+                } else {
+                    bump::print(&version, matches.get_flag("print-base"));
+                }
                 ExitCode::SUCCESS
             } else if matches.contains_id("point-release")
                 || matches.contains_id("candidate-release")

@@ -206,7 +206,7 @@ delimiter = "+"
     }
 
     pub fn to_string(&self, bump_type: &BumpType) -> String {
-        let version_string = match bump_type {
+        match bump_type {
             BumpType::Prefix(_) | BumpType::Point(_) | BumpType::Release => {
                 format!(
                     "{}{}.{}.{}",
@@ -224,15 +224,6 @@ delimiter = "+"
             ),
             // Useful for cmake and other tools
             BumpType::Base => format!("{}.{}.{}", self.major, self.minor, self.patch),
-        };
-        if self.timestamp.is_some() {
-            format!(
-                "{}  {}",
-                version_string,
-                self.timestamp.as_ref().unwrap()
-            )
-        } else {
-            version_string
         }
     }
 

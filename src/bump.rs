@@ -211,6 +211,16 @@ pub fn print(version: &Version, base: bool) {
     print!("{}", version.to_string(&bump_type));
 }
 
+pub fn print_with_timestamp(version: &Version) {
+    // bump_type doesn't matter here
+    let bump_type = BumpType::Point(PointType::Patch);
+    if let Some(timestamp) = &version.timestamp {
+        print!("{} (built on {})", version.to_string(&bump_type), timestamp);
+    } else {
+        print!("{}", version.to_string(&bump_type));
+    }
+}
+
 pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let mut version = get_version(matches)?;
     let bump_type = get_bump_type(matches)?;
