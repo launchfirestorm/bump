@@ -1,6 +1,7 @@
 use crate::{bump::BumpError, version::Version};
 use std::fs;
 use std::path::Path;
+use toml_edit::DocumentMut;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Language {
@@ -8,6 +9,7 @@ pub enum Language {
     Go,
     Java,
     CSharp,
+    Rust,
 }
 
 impl Language {
@@ -17,6 +19,7 @@ impl Language {
             "go" => Some(Language::Go),
             "java" => Some(Language::Java),
             "csharp" => Some(Language::CSharp),
+            "rust" => Some(Language::Rust),
             _ => None,
         }
     }
@@ -27,6 +30,7 @@ impl Language {
             Language::Go => "Go source file",
             Language::Java => "Java source file",
             Language::CSharp => "C# source file",
+            Language::Rust => "Cargo.toml",
         }
     }
 }
@@ -199,6 +203,38 @@ public static class Version {{
     Ok(())
 }
 
+fn rust_output(_version: &Version, path: &Path, version_str: &str) -> Result<(), BumpError> {
+    // Read existing Cargo.toml
+    let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
+
+    // Parse with toml_edit to preserve formatting
+    let mut doc = content
+        .parse::<DocumentMut>()
+        .map_err(|e| BumpError::ParseError(format!("failed to parse {}: {}", path.display(), e)))?;
+
+    // Update version in [package] section
+    // Strip the prefix (e.g., "v") from the version string for Cargo.toml
+    let cargo_version = version_str
+        .strip_prefix('v')
+        .unwrap_or(version_str);
+
+    if let Some(package) = doc.get_mut("package") {
+        package["version"] = toml_edit::value(cargo_version);
+    } else {
+        return Err(BumpError::ParseError(
+            format!("no [package] section found in {}", path.display()),
+        ));
+    }
+
+    fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
+    println!(
+        "{} updated to version {}",
+        Language::Rust.file_description(),
+        cargo_version
+    );
+    Ok(())
+}
+
 pub fn output_file(
     lang: &Language,
     version: &Version,
@@ -210,5 +246,6 @@ pub fn output_file(
         Language::Go => go_output(version, path, version_str),
         Language::Java => java_output(version, path, version_str),
         Language::CSharp => csharp_output(version, path, version_str),
+        Language::Rust => rust_output(version, path, version_str),
     }
 }

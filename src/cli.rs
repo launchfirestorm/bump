@@ -40,7 +40,7 @@ pub fn cli() -> Command {
                         .short('l')
                         .long("lang")
                         .value_name("LANG")
-                        .value_parser(clap::builder::PossibleValuesParser::new(["c", "java", "csharp", "go"]))
+                        .value_parser(clap::builder::PossibleValuesParser::new(["c", "java", "csharp", "go", "rust"]))
                         .num_args(1)
                         .required(true)
                         .help("Programming language for output files")

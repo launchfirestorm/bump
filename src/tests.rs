@@ -1911,3 +1911,165 @@ fn test_git_branch_detection() {
         }
     }
 }
+
+#[test]
+fn test_gen_command_rust_output() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let cargo_path = temp_dir.path().join("Cargo.toml");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 2
+minor = 3
+patch = 4
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Create a test Cargo.toml file with existing content
+    let cargo_content = r#"[package]
+name = "test-package"
+version = "0.1.0"
+edition = "2021"
+
+# This is a comment that should be preserved
+[dependencies]
+serde = "1.0"
+"#;
+    fs::write(&cargo_path, cargo_content).unwrap();
+
+    // Load version and update Cargo.toml
+    let version = Version::from_file(&config_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::Rust,
+        &version,
+        "v2.3.4",
+        &cargo_path,
+    )
+    .unwrap();
+
+    // Verify Cargo.toml content
+    let updated_content = fs::read_to_string(&cargo_path).unwrap();
+
+    // Version should be updated (without 'v' prefix)
+    assert!(updated_content.contains("version = \"2.3.4\""));
+
+    // Other fields should be preserved
+    assert!(updated_content.contains("name = \"test-package\""));
+    assert!(updated_content.contains("edition = \"2021\""));
+
+    // Comments should be preserved
+    assert!(updated_content.contains("# This is a comment that should be preserved"));
+
+    // Dependencies should be preserved
+    assert!(updated_content.contains("[dependencies]"));
+    assert!(updated_content.contains("serde = \"1.0\""));
+}
+
+#[test]
+fn test_gen_command_rust_output_with_dev_suffix() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let cargo_path = temp_dir.path().join("Cargo.toml");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Create a test Cargo.toml file
+    let cargo_content = r#"[package]
+name = "my-crate"
+version = "0.0.1"
+edition = "2021"
+"#;
+    fs::write(&cargo_path, cargo_content).unwrap();
+
+    // Load version and update Cargo.toml with development suffix
+    let version = Version::from_file(&config_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::Rust,
+        &version,
+        "v1.0.0+abc1234",
+        &cargo_path,
+    )
+    .unwrap();
+
+    // Verify Cargo.toml content - should have version with build metadata
+    let updated_content = fs::read_to_string(&cargo_path).unwrap();
+    assert!(updated_content.contains("version = \"1.0.0+abc1234\""));
+}
+
+#[test]
+fn test_gen_command_rust_output_missing_package_section() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+    let cargo_path = temp_dir.path().join("Cargo.toml");
+
+    // Create a test bump.toml file
+    let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 0
+patch = 0
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+    fs::write(&config_path, config_content).unwrap();
+
+    // Create a Cargo.toml without [package] section
+    let cargo_content = r#"[dependencies]
+serde = "1.0"
+"#;
+    fs::write(&cargo_path, cargo_content).unwrap();
+
+    // Load version and try to update - should fail
+    let version = Version::from_file(&config_path).unwrap();
+    let result = crate::lang::output_file(
+        &crate::lang::Language::Rust,
+        &version,
+        "v1.0.0",
+        &cargo_path,
+    );
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        BumpError::ParseError(msg) => {
+            assert!(msg.contains("no [package] section"));
+        }
+        _ => panic!("Expected ParseError"),
+    }
+}
