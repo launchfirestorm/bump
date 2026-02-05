@@ -356,7 +356,6 @@ fn version_to_header() {
     crate::lang::output_file(
         &crate::lang::Language::C,
         &version,
-        "1.2.3-rc4",
         &header_path,
     )
     .unwrap();
@@ -366,7 +365,8 @@ fn version_to_header() {
     assert!(header_content.contains("#define VERSION_MINOR 2"));
     assert!(header_content.contains("#define VERSION_PATCH 3"));
     assert!(header_content.contains("#define VERSION_CANDIDATE 4"));
-    assert!(header_content.contains("#define VERSION_STRING \"1.2.3-rc4\""));
+    assert!(header_content.contains("#define VERSION_STRING "));
+    assert!(header_content.contains("1.2.3-rc4"));
     assert!(header_content.contains("https://github.com/launchfirestorm/bump"));
 }
 
@@ -773,7 +773,7 @@ delimiter = "+"
 
     let version = Version::from_file(&config_path).unwrap();
 
-    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
 
     let header_content = fs::read_to_string(&output_path).unwrap();
 
@@ -810,7 +810,7 @@ delimiter = "+"
 
     assert!(version.timestamp.is_none());
 
-    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
 
     let header_content = fs::read_to_string(&output_path).unwrap();
 
@@ -1518,7 +1518,7 @@ delimiter = "+"
 
     // Load version and generate C header
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(&crate::lang::Language::C, &version, "v1.2.3", &output_path).unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
 
     // Verify C header content
     let header_content = fs::read_to_string(&output_path).unwrap();
@@ -1527,7 +1527,8 @@ delimiter = "+"
     assert!(header_content.contains("#define VERSION_MINOR 2"));
     assert!(header_content.contains("#define VERSION_PATCH 3"));
     assert!(header_content.contains("#define VERSION_CANDIDATE 0"));
-    assert!(header_content.contains("#define VERSION_STRING \"v1.2.3\""));
+    assert!(header_content.contains("#define VERSION_STRING \""));
+    assert!(header_content.contains("v1.2.3"));
     assert!(header_content.contains("#ifndef BUMP_VERSION_H"));
     assert!(header_content.contains("#endif /* BUMP_VERSION_H */"));
     assert!(header_content.contains("https://github.com/launchfirestorm/bump"));
@@ -1563,7 +1564,6 @@ delimiter = "+"
     crate::lang::output_file(
         &crate::lang::Language::Go,
         &version,
-        "v2.1.0-rc5",
         &output_path,
     )
     .unwrap();
@@ -1576,7 +1576,8 @@ delimiter = "+"
     assert!(go_content.contains("MINOR     = 1"));
     assert!(go_content.contains("PATCH     = 0"));
     assert!(go_content.contains("CANDIDATE = 5"));
-    assert!(go_content.contains("STRING    = \"v2.1.0-rc5\""));
+    assert!(go_content.contains("STRING    = \""));
+    assert!(go_content.contains("v2.1.0-rc5"));
     assert!(go_content.contains("https://github.com/launchfirestorm/bump"));
 }
 
@@ -1610,7 +1611,6 @@ delimiter = "_"
     crate::lang::output_file(
         &crate::lang::Language::Java,
         &version,
-        "release-3.0.1",
         &output_path,
     )
     .unwrap();
@@ -1623,7 +1623,8 @@ delimiter = "_"
     assert!(java_content.contains("public static final int MINOR = 0;"));
     assert!(java_content.contains("public static final int PATCH = 1;"));
     assert!(java_content.contains("public static final int CANDIDATE = 0;"));
-    assert!(java_content.contains("public static final String STRING = \"release-3.0.1\";"));
+    assert!(java_content.contains("public static final String STRING = \""));
+    assert!(java_content.contains("release-3.0.1"));
     assert!(java_content.contains("https://github.com/launchfirestorm/bump"));
 }
 
@@ -1657,7 +1658,6 @@ delimiter = "-dev"
     crate::lang::output_file(
         &crate::lang::Language::CSharp,
         &version,
-        "0.5.12-alpha2",
         &output_path,
     )
     .unwrap();
@@ -1670,7 +1670,8 @@ delimiter = "-dev"
     assert!(csharp_content.contains("public const int MINOR = 5;"));
     assert!(csharp_content.contains("public const int PATCH = 12;"));
     assert!(csharp_content.contains("public const int CANDIDATE = 2;"));
-    assert!(csharp_content.contains("public const string STRING = \"0.5.12-alpha2\";"));
+    assert!(csharp_content.contains("public const string STRING = \""));
+    assert!(csharp_content.contains("0.5.12-alpha2"));
     assert!(csharp_content.contains("https://github.com/launchfirestorm/bump"));
 }
 
@@ -1865,7 +1866,6 @@ delimiter = "+"
     crate::lang::output_file(
         &crate::lang::Language::C,
         &version,
-        "v1.2.3",
         &output_path_1,
     )
     .unwrap();
@@ -1873,7 +1873,6 @@ delimiter = "+"
     crate::lang::output_file(
         &crate::lang::Language::C,
         &version,
-        "v1.2.3",
         &output_path_2,
     )
     .unwrap();
@@ -1890,7 +1889,8 @@ delimiter = "+"
         assert!(content.contains("#define VERSION_MAJOR 1"));
         assert!(content.contains("#define VERSION_MINOR 2"));
         assert!(content.contains("#define VERSION_PATCH 3"));
-        assert!(content.contains("#define VERSION_STRING \"v1.2.3\""));
+        assert!(content.contains("#define VERSION_STRING \""));
+        assert!(content.contains("v1.2.3"));
     }
 }
 
@@ -1913,7 +1913,7 @@ fn test_git_branch_detection() {
 }
 
 #[test]
-fn test_gen_command_rust_output() {
+fn test_update_cargo_toml() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("bump.toml");
     let cargo_path = temp_dir.path().join("Cargo.toml");
@@ -1951,19 +1951,15 @@ serde = "1.0"
 
     // Load version and update Cargo.toml
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(
-        &crate::lang::Language::Rust,
-        &version,
-        "v2.3.4",
-        &cargo_path,
-    )
-    .unwrap();
+    crate::update::cargo_toml(&version, &cargo_path).unwrap();
 
     // Verify Cargo.toml content
     let updated_content = fs::read_to_string(&cargo_path).unwrap();
 
     // Version should be updated (without 'v' prefix)
-    assert!(updated_content.contains("version = \"2.3.4\""));
+    // Since we're in a git repo (not tagged), it will include development suffix
+    assert!(updated_content.contains("version = \""));
+    assert!(updated_content.contains("2.3.4+"));  // Base version with dev suffix
 
     // Other fields should be preserved
     assert!(updated_content.contains("name = \"test-package\""));
@@ -1978,7 +1974,7 @@ serde = "1.0"
 }
 
 #[test]
-fn test_gen_command_rust_output_with_dev_suffix() {
+fn test_update_cargo_toml_with_dev_suffix() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("bump.toml");
     let cargo_path = temp_dir.path().join("Cargo.toml");
@@ -2012,21 +2008,17 @@ edition = "2021"
 
     // Load version and update Cargo.toml with development suffix
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(
-        &crate::lang::Language::Rust,
-        &version,
-        "v1.0.0+abc1234",
-        &cargo_path,
-    )
-    .unwrap();
+    crate::update::cargo_toml(&version, &cargo_path).unwrap();
 
     // Verify Cargo.toml content - should have version with build metadata
     let updated_content = fs::read_to_string(&cargo_path).unwrap();
-    assert!(updated_content.contains("version = \"1.0.0+abc1234\""));
+    // Since we're in a git repo (not tagged), development suffix is automatically added
+    assert!(updated_content.contains("version = \""));
+    assert!(updated_content.contains("1.0.0+"));  // Base version with dev suffix
 }
 
 #[test]
-fn test_gen_command_rust_output_missing_package_section() {
+fn test_update_cargo_toml_missing_package_section() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("bump.toml");
     let cargo_path = temp_dir.path().join("Cargo.toml");
@@ -2058,12 +2050,7 @@ serde = "1.0"
 
     // Load version and try to update - should fail
     let version = Version::from_file(&config_path).unwrap();
-    let result = crate::lang::output_file(
-        &crate::lang::Language::Rust,
-        &version,
-        "v1.0.0",
-        &cargo_path,
-    );
+    let result = crate::update::cargo_toml(&version, &cargo_path);
 
     assert!(result.is_err());
     match result.unwrap_err() {

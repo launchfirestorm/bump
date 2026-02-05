@@ -5,6 +5,7 @@ use std::process::ExitCode;
 mod bump;
 mod cli;
 mod lang;
+mod update;
 #[cfg(test)]
 mod tests;
 mod version;
@@ -40,6 +41,7 @@ fn main() -> ExitCode {
             egress(bump::generate(sub_matches, &lang))
         }
         Some(("tag", sub_matches)) => egress(bump::tag_version(sub_matches)),
+        Some(("update", sub_matches)) => { egress(update::modify_file(sub_matches)) }
         _ => {
             if matches.contains_id("print-group") {
                 let version = match bump::get_version(&matches) {
