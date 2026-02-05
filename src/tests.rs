@@ -52,6 +52,12 @@ fn run_git_in(path: &Path, args: &[&str]) {
     }
 }
 
+#[derive(Clone, Copy)]
+enum RepoKind {
+    Tagged,
+    Untagged,
+}
+
 struct DirGuard {
     original: PathBuf,
 }
@@ -68,13 +74,7 @@ impl DirGuard {
 
 impl Drop for DirGuard {
     fn drop(&mut self) {
-        env::set_current_dir(&self.original).unwrap_or_else(|err| {
-            panic!(
-                "failed to restore current directory to {}: {}",
-                self.original.display(),
-                err
-            )
-        });
+        let _ = env::set_current_dir(&self.original);
     }
 }
 
@@ -86,28 +86,48 @@ where
     f()
 }
 
-fn with_temp_git_repo<F, R>(f: F) -> R
+struct SharedRepos {
+    tagged: TempDir,
+    untagged: TempDir,
+}
+
+fn init_repo(path: &Path) {
+    run_git_in(path, &["init"]);
+    run_git_in(path, &["config", "user.email", "test@example.com"]);
+    run_git_in(path, &["config", "user.name", "Test User"]);
+    run_git_in(path, &["commit", "--allow-empty", "-m", "Initial commit"]);
+}
+
+fn shared_repos() -> &'static SharedRepos {
+    static SHARED_REPOS: OnceLock<SharedRepos> = OnceLock::new();
+    SHARED_REPOS.get_or_init(|| {
+        let tagged = TempDir::new().unwrap();
+        let untagged = TempDir::new().unwrap();
+        init_repo(tagged.path());
+        init_repo(untagged.path());
+        run_git_in(tagged.path(), &["tag", "v1.2.3"]);
+        SharedRepos { tagged, untagged }
+    })
+}
+
+fn with_shared_git_repo<F, R>(kind: RepoKind, f: F) -> R
 where
     F: FnOnce(&TempDir) -> R,
 {
-    let lock = CWD_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-    let temp_dir = TempDir::new().unwrap();
-    let repo_path = temp_dir.path();
-    run_git_in(repo_path, &["init"]);
-    run_git_in(repo_path, &["config", "user.email", "test@example.com"]);
-    run_git_in(repo_path, &["config", "user.name", "Test User"]);
-    run_git_in(repo_path, &["commit", "--allow-empty", "-m", "Initial commit"]);
-
-    let result = with_cwd(repo_path, || f(&temp_dir));
-    drop(lock);
-    result
+    let _lock = CWD_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|err| err.into_inner());
+    let repo = shared_repos();
+    let selected = match kind {
+        RepoKind::Tagged => &repo.tagged,
+        RepoKind::Untagged => &repo.untagged,
+    };
+    let workdir = TempDir::new_in(selected.path()).unwrap();
+    with_cwd(selected.path(), || f(&workdir))
 }
 
 static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-fn git_tag(tag: &str) {
-    run_git(&["tag", tag]);
-}
 
 fn git_rev_parse_short() -> String {
     run_git(&["rev-parse", "--short", "HEAD"])
@@ -586,7 +606,7 @@ delimiter = "+"
 
 #[test]
 fn commit_sha() {
-    with_temp_git_repo(|_temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |_temp_dir| {
         let commit_sha = get_git_commit_sha().unwrap();
         assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
         assert_eq!(commit_sha.len(), 7, "Commit SHA should be 7 characters long");
@@ -776,7 +796,7 @@ delimiter = "+"
 
 #[test]
 fn test_timestamp_in_c_header_output() {
-    with_temp_git_repo(|temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
         let config_path = temp_dir.path().join("bump.toml");
         let output_path = temp_dir.path().join("version.h");
 
@@ -1677,7 +1697,7 @@ delimiter = "+"
 
 #[test]
 fn test_multiple_output_files() {
-    with_temp_git_repo(|temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
         let config_path = temp_dir.path().join("bump.toml");
         let output_path_1 = temp_dir.path().join("version1.h");
         let output_path_2 = temp_dir.path().join("include/version2.h");
@@ -1740,7 +1760,7 @@ delimiter = "+"
 
 #[test]
 fn test_git_branch_detection() {
-    with_temp_git_repo(|_temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |_temp_dir| {
         let branch = get_git_branch().unwrap();
         assert!(!branch.is_empty(), "Branch name should not be empty");
     });
@@ -1748,7 +1768,7 @@ fn test_git_branch_detection() {
 
 #[test]
 fn test_update_cargo_toml() {
-    with_temp_git_repo(|temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
         let config_path = temp_dir.path().join("bump.toml");
         let cargo_path = temp_dir.path().join("Cargo.toml");
 
@@ -1816,7 +1836,7 @@ serde = "1.0"
 
 #[test]
 fn test_update_cargo_toml_with_dev_suffix() {
-    with_temp_git_repo(|temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
         let config_path = temp_dir.path().join("bump.toml");
         let cargo_path = temp_dir.path().join("Cargo.toml");
 
@@ -1867,7 +1887,7 @@ edition = "2021"
 
 #[test]
 fn test_fully_qualified_string_with_dev_suffix_when_untagged() {
-    with_temp_git_repo(|temp_dir| {
+    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
         let config_path = temp_dir.path().join("bump.toml");
         let config_content = r#"prefix = "v"
 
@@ -1895,7 +1915,7 @@ delimiter = "+"
 
 #[test]
 fn test_fully_qualified_string_without_dev_suffix_when_tagged() {
-    with_temp_git_repo(|temp_dir| {
+    with_shared_git_repo(RepoKind::Tagged, |temp_dir| {
         let config_path = temp_dir.path().join("bump.toml");
         let config_content = r#"prefix = "v"
 
@@ -1914,7 +1934,6 @@ promotion = "git_sha"
 delimiter = "+"
 "#;
         write_bump_toml(&config_path, config_content);
-        git_tag("v1.2.3");
 
         let version = Version::from_file(&config_path).unwrap();
         assert_eq!(version.fully_qualified_string().unwrap(), "v1.2.3");
