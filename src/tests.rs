@@ -1,6 +1,9 @@
+use std::env;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
 // Import types from bump module
@@ -13,6 +16,127 @@ use crate::bump::{
 use crate::version::{
     CandidateSection, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
 };
+
+fn run_git(args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run git {:?}: {}", args, err));
+
+    if !output.status.success() {
+        panic!(
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn run_git_in(path: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run git -C {} {:?}: {}", path.display(), args, err));
+
+    if !output.status.success() {
+        panic!(
+            "git -C {} {:?} failed: {}",
+            path.display(),
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+struct DirGuard {
+    original: PathBuf,
+}
+
+impl DirGuard {
+    fn new(path: &Path) -> Self {
+        let original = env::current_dir().expect("failed to read current directory");
+        env::set_current_dir(path).unwrap_or_else(|err| {
+            panic!("failed to set current directory to {}: {}", path.display(), err)
+        });
+        Self { original }
+    }
+}
+
+impl Drop for DirGuard {
+    fn drop(&mut self) {
+        env::set_current_dir(&self.original).unwrap_or_else(|err| {
+            panic!(
+                "failed to restore current directory to {}: {}",
+                self.original.display(),
+                err
+            )
+        });
+    }
+}
+
+fn with_cwd<F, R>(path: &Path, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let _guard = DirGuard::new(path);
+    f()
+}
+
+fn with_temp_git_repo<F, R>(f: F) -> R
+where
+    F: FnOnce(&TempDir) -> R,
+{
+    let lock = CWD_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path();
+    run_git_in(repo_path, &["init"]);
+    run_git_in(repo_path, &["config", "user.email", "test@example.com"]);
+    run_git_in(repo_path, &["config", "user.name", "Test User"]);
+    run_git_in(repo_path, &["commit", "--allow-empty", "-m", "Initial commit"]);
+
+    let result = with_cwd(repo_path, || f(&temp_dir));
+    drop(lock);
+    result
+}
+
+static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn git_tag(tag: &str) {
+    run_git(&["tag", tag]);
+}
+
+fn git_rev_parse_short() -> String {
+    run_git(&["rev-parse", "--short", "HEAD"])
+}
+
+fn write_bump_toml(path: &Path, content: &str) {
+    fs::write(path, content).unwrap();
+}
+
+fn make_default_config(major: u32, minor: u32, patch: u32, candidate: u32) -> BumpConfig {
+    BumpConfig {
+        prefix: "v".to_string(),
+        timestamp: None,
+        version: VersionSection {
+            major,
+            minor,
+            patch,
+            candidate,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    }
+}
 
 #[test]
 fn version_default() {
@@ -248,24 +372,7 @@ fn version_to_file() {
 
 #[test]
 fn version_to_string_point() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 0,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 0);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -284,24 +391,7 @@ fn version_to_string_point() {
 
 #[test]
 fn version_to_string_candidate() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -323,24 +413,7 @@ fn version_to_header() {
     let temp_dir = TempDir::new().unwrap();
     let header_path = temp_dir.path().join("version.h");
 
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -547,26 +620,15 @@ delimiter = "+"
 
 #[test]
 fn commit_sha() {
-    match get_git_commit_sha() {
-        Ok(commit_sha) => {
-            println!("Commit SHA: {commit_sha}");
-            assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
-            assert_eq!(
-                commit_sha.len(),
-                7,
-                "Commit SHA should be 7 characters long"
-            );
-            assert!(
-                commit_sha.chars().all(|c| c.is_ascii_hexdigit()),
-                "Commit SHA should only contain hex digits"
-            );
-        }
-        Err(e) => {
-            println!("Git command failed (expected in some environments): {e}");
-            // Don't fail the test if we're not in a git repo or git isn't available
-            // This makes the test more robust for CI/CD environments
-        }
-    }
+    with_temp_git_repo(|_temp_dir| {
+        let commit_sha = get_git_commit_sha().unwrap();
+        assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
+        assert_eq!(commit_sha.len(), 7, "Commit SHA should be 7 characters long");
+        assert!(
+            commit_sha.chars().all(|c| c.is_ascii_hexdigit()),
+            "Commit SHA should only contain hex digits"
+        );
+    });
 }
 
 #[test]
@@ -989,24 +1051,7 @@ delimiter = "+"
 
 #[test]
 fn version_bump_major() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let mut version = Version {
         prefix: "v".to_string(),
@@ -1030,24 +1075,7 @@ fn version_bump_major() {
 
 #[test]
 fn version_bump_minor() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let mut version = Version {
         prefix: "v".to_string(),
@@ -1071,24 +1099,7 @@ fn version_bump_minor() {
 
 #[test]
 fn version_bump_patch() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let mut version = Version {
         prefix: "v".to_string(),
@@ -1153,24 +1164,7 @@ fn version_bump_candidate() {
 
 #[test]
 fn version_bump_candidate_existing_value() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let mut version = Version {
         prefix: "v".to_string(),
@@ -1194,24 +1188,7 @@ fn version_bump_candidate_existing_value() {
 
 #[test]
 fn version_bump_sequence() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 0,
-            patch: 0,
-            candidate: 0,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 0, 0, 0);
 
     let mut version = Version {
         prefix: "v".to_string(),
@@ -1276,24 +1253,7 @@ fn point_types() {
 
 #[test]
 fn version_bump_patch_with_candidate() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let mut version = Version {
         prefix: "v".to_string(),
@@ -1318,24 +1278,7 @@ fn version_bump_patch_with_candidate() {
 
 #[test]
 fn version_to_string_candidate_with_value() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -1354,24 +1297,7 @@ fn version_to_string_candidate_with_value() {
 
 #[test]
 fn version_to_string_none_tagged_without_candidate() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 0,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 0);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -1392,24 +1318,7 @@ fn version_to_string_none_tagged_without_candidate() {
 
 #[test]
 fn version_to_string_point_with_candidate() {
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -1896,30 +1805,20 @@ delimiter = "+"
 
 #[test]
 fn test_git_branch_detection() {
-    // This test only runs if we're in a git repository
-    match get_git_branch() {
-        Ok(branch) => {
-            println!("Current branch: {}", branch);
-            assert!(!branch.is_empty(), "Branch name should not be empty");
-            // Since you're on the "behavior" branch, we can test for that
-            // But we'll make it flexible for CI environments
-            assert!(branch.len() > 0);
-        }
-        Err(e) => {
-            println!("Git branch detection failed (expected in some environments): {e}");
-            // Don't fail the test if we're not in a git repo
-        }
-    }
+    with_temp_git_repo(|_temp_dir| {
+        let branch = get_git_branch().unwrap();
+        assert!(!branch.is_empty(), "Branch name should not be empty");
+    });
 }
 
 #[test]
 fn test_update_cargo_toml() {
-    let temp_dir = TempDir::new().unwrap();
-    let config_path = temp_dir.path().join("bump.toml");
-    let cargo_path = temp_dir.path().join("Cargo.toml");
+    with_temp_git_repo(|temp_dir| {
+        let config_path = temp_dir.path().join("bump.toml");
+        let cargo_path = temp_dir.path().join("Cargo.toml");
 
-    // Create a test bump.toml file
-    let config_content = r#"prefix = "v"
+        // Create a test bump.toml file
+        let config_content = r#"prefix = "v"
 
 [version]
 major = 2
@@ -1935,10 +1834,10 @@ delimiter = "-rc"
 promotion = "git_sha"
 delimiter = "+"
 "#;
-    fs::write(&config_path, config_content).unwrap();
+        write_bump_toml(&config_path, config_content);
 
-    // Create a test Cargo.toml file with existing content
-    let cargo_content = r#"[package]
+        // Create a test Cargo.toml file with existing content
+        let cargo_content = r#"[package]
 name = "test-package"
 version = "0.1.0"
 edition = "2021"
@@ -1947,40 +1846,47 @@ edition = "2021"
 [dependencies]
 serde = "1.0"
 "#;
-    fs::write(&cargo_path, cargo_content).unwrap();
+        fs::write(&cargo_path, cargo_content).unwrap();
 
-    // Load version and update Cargo.toml
-    let version = Version::from_file(&config_path).unwrap();
-    crate::update::cargo_toml(&version, &cargo_path).unwrap();
+        // Load version and update Cargo.toml
+        let version = Version::from_file(&config_path).unwrap();
+        crate::update::cargo_toml(&version, &cargo_path).unwrap();
 
-    // Verify Cargo.toml content
-    let updated_content = fs::read_to_string(&cargo_path).unwrap();
+        // Verify Cargo.toml content
+        let updated_content = fs::read_to_string(&cargo_path).unwrap();
+        let expected_version = version
+            .fully_qualified_string()
+            .unwrap()
+            .trim_start_matches('v')
+            .to_string();
 
-    // Version should be updated (without 'v' prefix)
-    // Since we're in a git repo (not tagged), it will include development suffix
-    assert!(updated_content.contains("version = \""));
-    assert!(updated_content.contains("2.3.4+"));  // Base version with dev suffix
+        // Version should be updated (without 'v' prefix)
+        assert!(updated_content.contains(&format!(
+            "version = \"{}\"",
+            expected_version
+        )));
 
-    // Other fields should be preserved
-    assert!(updated_content.contains("name = \"test-package\""));
-    assert!(updated_content.contains("edition = \"2021\""));
+        // Other fields should be preserved
+        assert!(updated_content.contains("name = \"test-package\""));
+        assert!(updated_content.contains("edition = \"2021\""));
 
-    // Comments should be preserved
-    assert!(updated_content.contains("# This is a comment that should be preserved"));
+        // Comments should be preserved
+        assert!(updated_content.contains("# This is a comment that should be preserved"));
 
-    // Dependencies should be preserved
-    assert!(updated_content.contains("[dependencies]"));
-    assert!(updated_content.contains("serde = \"1.0\""));
+        // Dependencies should be preserved
+        assert!(updated_content.contains("[dependencies]"));
+        assert!(updated_content.contains("serde = \"1.0\""));
+    });
 }
 
 #[test]
 fn test_update_cargo_toml_with_dev_suffix() {
-    let temp_dir = TempDir::new().unwrap();
-    let config_path = temp_dir.path().join("bump.toml");
-    let cargo_path = temp_dir.path().join("Cargo.toml");
+    with_temp_git_repo(|temp_dir| {
+        let config_path = temp_dir.path().join("bump.toml");
+        let cargo_path = temp_dir.path().join("Cargo.toml");
 
-    // Create a test bump.toml file
-    let config_content = r#"prefix = "v"
+        // Create a test bump.toml file
+        let config_content = r#"prefix = "v"
 
 [version]
 major = 1
@@ -1996,25 +1902,88 @@ delimiter = "-rc"
 promotion = "git_sha"
 delimiter = "+"
 "#;
-    fs::write(&config_path, config_content).unwrap();
+        write_bump_toml(&config_path, config_content);
 
-    // Create a test Cargo.toml file
-    let cargo_content = r#"[package]
+        // Create a test Cargo.toml file
+        let cargo_content = r#"[package]
 name = "my-crate"
 version = "0.0.1"
 edition = "2021"
 "#;
-    fs::write(&cargo_path, cargo_content).unwrap();
+        fs::write(&cargo_path, cargo_content).unwrap();
 
-    // Load version and update Cargo.toml with development suffix
-    let version = Version::from_file(&config_path).unwrap();
-    crate::update::cargo_toml(&version, &cargo_path).unwrap();
+        // Load version and update Cargo.toml with development suffix
+        let version = Version::from_file(&config_path).unwrap();
+        crate::update::cargo_toml(&version, &cargo_path).unwrap();
 
-    // Verify Cargo.toml content - should have version with build metadata
-    let updated_content = fs::read_to_string(&cargo_path).unwrap();
-    // Since we're in a git repo (not tagged), development suffix is automatically added
-    assert!(updated_content.contains("version = \""));
-    assert!(updated_content.contains("1.0.0+"));  // Base version with dev suffix
+        // Verify Cargo.toml content - should have version with build metadata
+        let updated_content = fs::read_to_string(&cargo_path).unwrap();
+        let expected_version = version
+            .fully_qualified_string()
+            .unwrap()
+            .trim_start_matches('v')
+            .to_string();
+        assert!(updated_content.contains(&format!(
+            "version = \"{}\"",
+            expected_version
+        )));
+    });
+}
+
+#[test]
+fn test_fully_qualified_string_with_dev_suffix_when_untagged() {
+    with_temp_git_repo(|temp_dir| {
+        let config_path = temp_dir.path().join("bump.toml");
+        let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+        write_bump_toml(&config_path, config_content);
+
+        let version = Version::from_file(&config_path).unwrap();
+        let expected = format!("v1.2.3+{}", git_rev_parse_short());
+        assert_eq!(version.fully_qualified_string().unwrap(), expected);
+    });
+}
+
+#[test]
+fn test_fully_qualified_string_without_dev_suffix_when_tagged() {
+    with_temp_git_repo(|temp_dir| {
+        let config_path = temp_dir.path().join("bump.toml");
+        let config_content = r#"prefix = "v"
+
+[version]
+major = 1
+minor = 2
+patch = 3
+candidate = 0
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#;
+        write_bump_toml(&config_path, config_content);
+        git_tag("v1.2.3");
+
+        let version = Version::from_file(&config_path).unwrap();
+        assert_eq!(version.fully_qualified_string().unwrap(), "v1.2.3");
+    });
 }
 
 #[test]
