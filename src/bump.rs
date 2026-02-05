@@ -345,52 +345,8 @@ pub fn get_development_suffix(version: &Version) -> Result<String, BumpError> {
 }
 
 pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> {
-    if !is_git_repository() {
-        return Err(BumpError::LogicError("Not in a git repository".to_string()));
-    }
-
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let version = Version::from_argmatches(matches)?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
-
-    let tagged = get_git_tag(false).is_ok();
-
-    let version_string = match (tagged, version.candidate) {
-        (true, 0) => format!(
-            "{}{}.{}.{}",
-            version.prefix, version.major, version.minor, version.patch
-        ),
-        (true, _) => format!(
-            "{}{}.{}.{}{}{}",
-            version.prefix,
-            version.major,
-            version.minor,
-            version.patch,
-            version.config.candidate.delimiter,
-            version.candidate
-        ),
-        (false, 0) => format!(
-            "{}{}.{}.{}{}{}",
-            version.prefix,
-            version.major,
-            version.minor,
-            version.patch,
-            version.config.development.delimiter,
-            get_development_suffix(&version)?
-        ),
-        (false, _) => format!(
-            "{}{}.{}.{}{}{}{}{}",
-            version.prefix,
-            version.major,
-            version.minor,
-            version.patch,
-            version.config.candidate.delimiter,
-            version.candidate,
-            version.config.development.delimiter,
-            get_development_suffix(&version)?
-        ),
-    };
-
     for output_file in output_files {
         let output_path = Path::new(output_file);
 
@@ -398,7 +354,7 @@ pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> 
         if let Some(parent) = output_path.parent() {
             std::fs::create_dir_all(parent).map_err(BumpError::IoError)?;
         }
-        lang::output_file(lang, &version, &version_string, output_path)?;
+        lang::output_file(lang, &version, output_path)?;
     }
 
     Ok(())

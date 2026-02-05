@@ -1,4 +1,10 @@
-use crate::bump::{BumpError, BumpType, PointType};
+use crate::bump::{
+    BumpError, BumpType, PointType, 
+    is_git_repository,
+    resolve_path, 
+    get_development_suffix, 
+    get_git_tag
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -84,6 +90,14 @@ impl Version {
             path: path.to_path_buf(),
             config,
         }
+    }
+
+    pub fn from_argmatches(matches: &clap::ArgMatches) -> Result<Self, BumpError> {
+        let bumpfile = matches
+            .get_one::<String>("bumpfile")
+            .expect("bumpfile not provided");
+        let path = resolve_path(bumpfile);
+        Version::from_file(&path)
     }
 
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
@@ -225,6 +239,52 @@ delimiter = "+"
             // Useful for cmake and other tools
             BumpType::Base => format!("{}.{}.{}", self.major, self.minor, self.patch),
         }
+    }
+
+    pub fn fully_qualified_string(&self) -> Result<String, BumpError> {
+        if !is_git_repository() {
+            return Err(BumpError::LogicError("Not in a git repository".to_string()));
+        }
+
+        let tagged = get_git_tag(false).is_ok();
+
+        let version_string = match (tagged, self.candidate) {
+            (true, 0) => format!(
+                "{}{}.{}.{}",
+                self.prefix, self.major, self.minor, self.patch
+            ),
+            (true, _) => format!(
+                "{}{}.{}.{}{}{}",
+                self.prefix,
+                self.major,
+                self.minor,
+                self.patch,
+                self.config.candidate.delimiter,
+                self.candidate
+            ),
+            (false, 0) => format!(
+                "{}{}.{}.{}{}{}",
+                self.prefix,
+                self.major,
+                self.minor,
+                self.patch,
+                self.config.development.delimiter,
+                get_development_suffix(&self)?
+            ),
+            (false, _) => format!(
+                "{}{}.{}.{}{}{}{}{}",
+                self.prefix,
+                self.major,
+                self.minor,
+                self.patch,
+                self.config.candidate.delimiter,
+                self.candidate,
+                self.config.development.delimiter,
+                get_development_suffix(&self)?
+            ),
+        };
+
+        Ok(version_string)
     }
 
     pub fn from_string(version_str: &str, path: &Path) -> Result<Self, BumpError> {
