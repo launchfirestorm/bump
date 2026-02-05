@@ -7,6 +7,21 @@ use std::{
     process::Command as ProcessCommand,
 };
 
+#[cfg(test)]
+use std::cell::RefCell;
+
+#[cfg(test)]
+thread_local! {
+    /// Test-only: allows tests to override the git repository path without changing CWD
+    static TEST_REPO_PATH: RefCell<Option<PathBuf>> = RefCell::new(None);
+}
+
+#[cfg(test)]
+/// Test-only: Set the repository path for git operations in this thread
+pub fn set_test_repo_path(path: Option<PathBuf>) {
+    TEST_REPO_PATH.with(|p| *p.borrow_mut() = path);
+}
+
 pub enum PointType {
     Major,
     Minor,
@@ -161,7 +176,7 @@ pub fn initialize(bumpfile: &str, prefix: &str) -> Result<(), BumpError> {
     let use_git_tag = use_git_tag.trim().to_lowercase();
 
     if use_git_tag == "y" {
-        match get_git_tag(true, None) {
+        match get_git_tag(true) {
             Ok(git_tag) => {
                 println!("Found git tag: {git_tag}");
                 let mut git_version = Version::from_string(&git_tag, &filepath)?;
@@ -241,12 +256,20 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
-fn run_git_with_repo(command: &str, repo_path: Option<&Path>) -> Result<String, BumpError> {
+fn run_git(command: &str) -> Result<String, BumpError> {
     let args: Vec<&str> = command.split_whitespace().collect();
     let mut cmd = ProcessCommand::new("git");
-    if let Some(path) = repo_path {
-        cmd.arg("-C").arg(path);
+    
+    #[cfg(test)]
+    {
+        // Check if test has set a specific repo path
+        TEST_REPO_PATH.with(|p| {
+            if let Some(ref path) = *p.borrow() {
+                cmd.arg("-C").arg(path);
+            }
+        });
     }
+    
     let output = cmd
         .args(&args)
         .output()
@@ -263,46 +286,51 @@ fn run_git_with_repo(command: &str, repo_path: Option<&Path>) -> Result<String, 
     Ok(String::from_utf8_lossy(&output.stderr).trim().to_string())
 }
 
-pub fn is_git_repository(repo_path: Option<&Path>) -> bool {
+pub fn is_git_repository() -> bool {
     let mut cmd = ProcessCommand::new("git");
-    if let Some(path) = repo_path {
-        cmd.arg("-C").arg(path);
+    
+    #[cfg(test)]
+    {
+        // Check if test has set a specific repo path
+        TEST_REPO_PATH.with(|p| {
+            if let Some(ref path) = *p.borrow() {
+                cmd.arg("-C").arg(path);
+            }
+        });
     }
+    
     cmd.args(["rev-parse", "--git-dir"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
 
-pub fn get_git_tag(last_tag: bool, repo_path: Option<&Path>) -> Result<String, BumpError> {
+pub fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
     if last_tag {
-        run_git_with_repo("describe --tags --abbrev=0", repo_path)
+        run_git("describe --tags --abbrev=0")
     } else {
-        run_git_with_repo("describe --exact-match --tags HEAD", repo_path)
+        run_git("describe --exact-match --tags HEAD")
     }
 }
 
-pub fn get_git_commit_sha(repo_path: Option<&Path>) -> Result<String, BumpError> {
-    run_git_with_repo("rev-parse --short HEAD", repo_path)
+pub fn get_git_commit_sha() -> Result<String, BumpError> {
+    run_git("rev-parse --short HEAD")
 }
 
-pub fn get_git_branch(repo_path: Option<&Path>) -> Result<String, BumpError> {
-    run_git_with_repo("rev-parse --abbrev-ref HEAD", repo_path)
+pub fn get_git_branch() -> Result<String, BumpError> {
+    run_git("rev-parse --abbrev-ref HEAD")
 }
 
-pub fn get_development_suffix(
-    version: &Version,
-    repo_path: Option<&Path>,
-) -> Result<String, BumpError> {
+pub fn get_development_suffix(version: &Version) -> Result<String, BumpError> {
     match version.config.development.promotion.as_str() {
-        "git_sha" => get_git_commit_sha(repo_path),
-        "branch" => get_git_branch(repo_path),
+        "git_sha" => get_git_commit_sha(),
+        "branch" => get_git_branch(),
         "full" => {
-            let branch = get_git_branch(repo_path)?;
-            let sha = get_git_commit_sha(repo_path)?;
+            let branch = get_git_branch()?;
+            let sha = get_git_commit_sha()?;
             Ok(format!("{}_{}", branch, sha))
         }
-        _ => get_git_commit_sha(repo_path), // default to git_sha
+        _ => get_git_commit_sha(), // default to git_sha
     }
 }
 
@@ -316,14 +344,14 @@ pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> 
         if let Some(parent) = output_path.parent() {
             std::fs::create_dir_all(parent).map_err(BumpError::IoError)?;
         }
-        lang::output_file(lang, &version, output_path, None)?;
+        lang::output_file(lang, &version, output_path)?;
     }
 
     Ok(())
 }
 
 pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpError> {
-    if !is_git_repository(None) {
+    if !is_git_repository() {
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 

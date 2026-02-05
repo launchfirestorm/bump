@@ -9,7 +9,6 @@ use std::path::Path;
 pub(crate) fn cargo_toml(
     version: &Version,
     path: &Path,
-    repo_path: Option<&Path>,
 ) -> Result<(), BumpError> {
     // Read existing Cargo.toml
     let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
@@ -21,7 +20,7 @@ pub(crate) fn cargo_toml(
 
     // Update version in [package] section
     // Strip the prefix (e.g., "v") from the version string for Cargo.toml
-    let version_str = version.fully_qualified_string(repo_path)?;
+    let version_str = version.fully_qualified_string()?;
     let cargo_version = version_str
         .strip_prefix('v')
         .unwrap_or(&version_str);
@@ -51,7 +50,7 @@ pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
     let file_path = resolve_path(path_str);
     
     match path_str.as_str() {
-        "Cargo.toml" => cargo_toml(&version, &file_path, None),
+        "Cargo.toml" => cargo_toml(&version, &file_path),
         _ => Err(BumpError::LogicError(format!(
             "Unsupported file type: {}", path_str
         ))),

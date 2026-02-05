@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 use tempfile::TempDir;
 
 // Import types from bump module
@@ -15,8 +16,54 @@ use crate::version::{
     CandidateSection, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
 };
 
+// RAII wrapper for test directories that automatically sets thread-local repo path
+struct TestRepo {
+    _temp_dir: TempDir,
+}
+
+impl TestRepo {
+    fn new(temp_dir: TempDir) -> Self {
+        crate::bump::set_test_repo_path(Some(temp_dir.path().to_path_buf()));
+        TestRepo { _temp_dir: temp_dir }
+    }
+
+    fn path(&self) -> &Path {
+        self._temp_dir.path()
+    }
+}
+
+impl Drop for TestRepo {
+    fn drop(&mut self) {
+        crate::bump::set_test_repo_path(None);
+    }
+}
+
+static TEST_GIT_CONFIG: OnceLock<PathBuf> = OnceLock::new();
+
+fn get_test_git_config() -> &'static Path {
+    TEST_GIT_CONFIG.get_or_init(|| {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("test-gitconfig");
+        let config_content = r#"[user]
+	email = test@example.com
+	name = Test User
+[commit]
+	gpgsign = false
+[tag]
+	gpgsign = false
+"#;
+        fs::write(&config_path, config_content).unwrap();
+        // Leak the TempDir so it persists for the entire test run
+        let path = config_path.clone();
+        std::mem::forget(temp_dir);
+        path
+    })
+}
+
 fn run_git_in(path: &Path, args: &[&str]) {
     let output = Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", get_test_git_config())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .arg("-C")
         .arg(path)
         .args(args)
@@ -35,6 +82,8 @@ fn run_git_in(path: &Path, args: &[&str]) {
 
 fn run_git_in_output(path: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", get_test_git_config())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .arg("-C")
         .arg(path)
         .args(args)
@@ -55,19 +104,22 @@ fn run_git_in_output(path: &Path, args: &[&str]) -> String {
 
 fn init_repo(path: &Path) {
     run_git_in(path, &["init"]);
-    run_git_in(path, &["config", "user.email", "test@example.com"]);
-    run_git_in(path, &["config", "user.name", "Test User"]);
     run_git_in(path, &["commit", "--allow-empty", "-m", "Initial commit"]);
 }
 
-fn create_temp_git_repo(tagged: bool) -> TempDir {
+fn create_temp_git_repo(tagged: bool) -> TestRepo {
     let temp_dir = TempDir::new().unwrap();
     let repo_path = temp_dir.path();
     init_repo(repo_path);
     if tagged {
         run_git_in(repo_path, &["tag", "v1.2.3"]);
     }
-    temp_dir
+    TestRepo::new(temp_dir)
+}
+
+fn create_temp_dir() -> TestRepo {
+    let temp_dir = TempDir::new().unwrap();
+    TestRepo::new(temp_dir)
 }
 
 fn git_rev_parse_short_in(path: &Path) -> String {
@@ -75,6 +127,49 @@ fn git_rev_parse_short_in(path: &Path) -> String {
 }
 
 fn write_bump_toml(path: &Path, content: &str) {
+    fs::write(path, content).unwrap();
+}
+
+fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
+    let (major, minor, patch, candidate) = version;
+    let content = format!(r#"prefix = "v"
+
+[version]
+major = {}
+minor = {}
+patch = {}
+candidate = {}
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#, major, minor, patch, candidate);
+    fs::write(path, content).unwrap();
+}
+
+fn write_test_config_with_timestamp(path: &Path, version: (u32, u32, u32, u32), timestamp_format: &str) {
+    let (major, minor, patch, candidate) = version;
+    let content = format!(r#"prefix = "v"
+timestamp = "{}"
+
+[version]
+major = {}
+minor = {}
+patch = {}
+candidate = {}
+
+[candidate]
+promotion = "minor"
+delimiter = "-rc"
+
+[development]
+promotion = "git_sha"
+delimiter = "+"
+"#, timestamp_format, major, minor, patch, candidate);
     fs::write(path, content).unwrap();
 }
 
@@ -354,8 +449,8 @@ fn version_to_string_candidate() {
 
 #[test]
 fn version_to_header() {
-    let temp_dir = create_temp_git_repo(false);
-    let header_path = temp_dir.path().join("version.h");
+    let _repo = create_temp_dir();
+    let header_path = _repo.path().join("version.h");
 
     let config = make_default_config(1, 2, 3, 4);
 
@@ -374,7 +469,6 @@ fn version_to_header() {
         &crate::lang::Language::C,
         &version,
         &header_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -548,8 +642,8 @@ delimiter = "+"
 
 #[test]
 fn commit_sha() {
-    let temp_dir = create_temp_git_repo(false);
-    let commit_sha = get_git_commit_sha(Some(temp_dir.path())).unwrap();
+    let _repo = create_temp_git_repo(false);
+    let commit_sha = get_git_commit_sha().unwrap();
     assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
     assert_eq!(commit_sha.len(), 7, "Commit SHA should be 7 characters long");
     assert!(
@@ -563,23 +657,7 @@ fn test_timestamp_config_none() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 0
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config(&file_path, (1, 0, 0, 0));
 
     let version = Version::from_file(&file_path).unwrap();
 
@@ -593,24 +671,7 @@ fn test_timestamp_config_with_format() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-timestamp = "%Y-%m-%d"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 0
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config_with_timestamp(&file_path, (1, 0, 0, 0), "%Y-%m-%d");
 
     let version = Version::from_file(&file_path).unwrap();
 
@@ -632,24 +693,7 @@ fn test_timestamp_iso8601_format() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-timestamp = "%Y-%m-%dT%H:%M:%S%z"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 0
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config_with_timestamp(&file_path, (1, 0, 0, 0), "%Y-%m-%dT%H:%M:%S%z");
 
     let version = Version::from_file(&file_path).unwrap();
 
@@ -666,24 +710,7 @@ fn test_timestamp_custom_format() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-timestamp = "%Y%m%d_%H%M%S"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 0
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config_with_timestamp(&file_path, (1, 0, 0, 0), "%Y%m%d_%H%M%S");
 
     let version = Version::from_file(&file_path).unwrap();
 
@@ -737,9 +764,9 @@ delimiter = "+"
 
 #[test]
 fn test_timestamp_in_c_header_output() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("version.h");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path = _repo.path().join("version.h");
 
         let config_content = r#"prefix = "v"
 timestamp = "%Y-%m-%d"
@@ -766,7 +793,6 @@ delimiter = "+"
         &crate::lang::Language::C,
         &version,
         &output_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -779,9 +805,9 @@ delimiter = "+"
 
 #[test]
 fn test_timestamp_not_in_c_header_when_none() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("version.h");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path = _repo.path().join("version.h");
 
     let config_content = r#"prefix = "v"
 
@@ -809,7 +835,6 @@ delimiter = "+"
         &crate::lang::Language::C,
         &version,
         &output_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -868,24 +893,7 @@ fn test_timestamp_with_candidate_bump() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-timestamp = "%Y%m%d"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 0
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config_with_timestamp(&file_path, (1, 0, 0, 0), "%Y%m%d");
 
     let mut version = Version::from_file(&file_path).unwrap();
 
@@ -906,24 +914,7 @@ fn test_timestamp_with_release_bump() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-timestamp = "%Y-%m-%d"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 1
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config_with_timestamp(&file_path, (1, 0, 0, 1), "%Y-%m-%d");
 
     let mut version = Version::from_file(&file_path).unwrap();
 
@@ -941,24 +932,7 @@ fn test_timestamp_human_readable_format() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
-timestamp = "%B %d, %Y"
-
-[version]
-major = 1
-minor = 0
-patch = 0
-candidate = 0
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#;
-    fs::write(&file_path, content).unwrap();
+    write_test_config_with_timestamp(&file_path, (1, 0, 0, 0), "%B %d, %Y");
 
     let version = Version::from_file(&file_path).unwrap();
 
@@ -1308,9 +1282,9 @@ delimiter = "+"
 
 #[test]
 fn test_gen_command_c_output() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("version.h");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path = _repo.path().join("version.h");
 
     // Create a test bump.toml file
     let config_content = r#"prefix = "v"
@@ -1337,7 +1311,6 @@ delimiter = "+"
         &crate::lang::Language::C,
         &version,
         &output_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1357,9 +1330,9 @@ delimiter = "+"
 
 #[test]
 fn test_gen_command_go_output() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("version.go");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path = _repo.path().join("version.go");
 
     // Create a test bump.toml file
     let config_content = r#"prefix = "v"
@@ -1386,7 +1359,6 @@ delimiter = "+"
         &crate::lang::Language::Go,
         &version,
         &output_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1405,9 +1377,9 @@ delimiter = "+"
 
 #[test]
 fn test_gen_command_java_output() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("Version.java");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path = _repo.path().join("Version.java");
 
     // Create a test bump.toml file
     let config_content = r#"prefix = "release-"
@@ -1434,7 +1406,6 @@ delimiter = "_"
         &crate::lang::Language::Java,
         &version,
         &output_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1453,9 +1424,9 @@ delimiter = "_"
 
 #[test]
 fn test_gen_command_csharp_output() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("Version.cs");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path = _repo.path().join("Version.cs");
 
     // Create a test bump.toml file
     let config_content = r#"prefix = ""
@@ -1482,7 +1453,6 @@ delimiter = "-dev"
         &crate::lang::Language::CSharp,
         &version,
         &output_path,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1658,10 +1628,10 @@ delimiter = "+"
 
 #[test]
 fn test_multiple_output_files() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path_1 = temp_dir.path().join("version1.h");
-    let output_path_2 = temp_dir.path().join("include/version2.h");
+    let _repo = create_temp_dir();
+    let config_path = _repo.path().join("bump.toml");
+    let output_path_1 = _repo.path().join("version1.h");
+    let output_path_2 = _repo.path().join("include/version2.h");
 
         // Create a test bump.toml file
         let config_content = r#"prefix = "v"
@@ -1691,7 +1661,6 @@ delimiter = "+"
         &crate::lang::Language::C,
         &version,
         &output_path_1,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1699,7 +1668,6 @@ delimiter = "+"
         &crate::lang::Language::C,
         &version,
         &output_path_2,
-        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1722,16 +1690,16 @@ delimiter = "+"
 
 #[test]
 fn test_git_branch_detection() {
-    let temp_dir = create_temp_git_repo(false);
-    let branch = get_git_branch(Some(temp_dir.path())).unwrap();
+    let _repo = create_temp_git_repo(false);
+    let branch = get_git_branch().unwrap();
     assert!(!branch.is_empty(), "Branch name should not be empty");
 }
 
 #[test]
 fn test_update_cargo_toml() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let cargo_path = temp_dir.path().join("Cargo.toml");
+    let _repo = create_temp_git_repo(false);
+    let config_path = _repo.path().join("bump.toml");
+    let cargo_path = _repo.path().join("Cargo.toml");
 
         // Create a test bump.toml file
         let config_content = r#"prefix = "v"
@@ -1766,12 +1734,12 @@ serde = "1.0"
 
         // Load version and update Cargo.toml
         let version = Version::from_file(&config_path).unwrap();
-    crate::update::cargo_toml(&version, &cargo_path, Some(temp_dir.path())).unwrap();
+    crate::update::cargo_toml(&version, &cargo_path).unwrap();
 
         // Verify Cargo.toml content
         let updated_content = fs::read_to_string(&cargo_path).unwrap();
     let expected_version = version
-        .fully_qualified_string(Some(temp_dir.path()))
+        .fully_qualified_string()
         .unwrap()
         .trim_start_matches('v')
         .to_string();
@@ -1796,9 +1764,9 @@ serde = "1.0"
 
 #[test]
 fn test_update_cargo_toml_with_dev_suffix() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let cargo_path = temp_dir.path().join("Cargo.toml");
+    let _repo = create_temp_git_repo(false);
+    let config_path = _repo.path().join("bump.toml");
+    let cargo_path = _repo.path().join("Cargo.toml");
 
         // Create a test bump.toml file
         let config_content = r#"prefix = "v"
@@ -1829,12 +1797,12 @@ edition = "2021"
 
         // Load version and update Cargo.toml with development suffix
         let version = Version::from_file(&config_path).unwrap();
-    crate::update::cargo_toml(&version, &cargo_path, Some(temp_dir.path())).unwrap();
+    crate::update::cargo_toml(&version, &cargo_path).unwrap();
 
         // Verify Cargo.toml content - should have version with build metadata
         let updated_content = fs::read_to_string(&cargo_path).unwrap();
     let expected_version = version
-        .fully_qualified_string(Some(temp_dir.path()))
+        .fully_qualified_string()
         .unwrap()
         .trim_start_matches('v')
         .to_string();
@@ -1846,8 +1814,9 @@ edition = "2021"
 
 #[test]
 fn test_fully_qualified_string_with_dev_suffix_when_untagged() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
+    let _repo = create_temp_git_repo(false);
+    let config_path = _repo.path().join("bump.toml");
+    let short_sha = git_rev_parse_short_in(_repo.path());
     let config_content = r#"prefix = "v"
 
 [version]
@@ -1867,10 +1836,10 @@ delimiter = "+"
         write_bump_toml(&config_path, config_content);
 
     let version = Version::from_file(&config_path).unwrap();
-    let expected = format!("v1.2.3+{}", git_rev_parse_short_in(temp_dir.path()));
+    let expected = format!("v1.2.3+{}", short_sha);
     assert_eq!(
         version
-            .fully_qualified_string(Some(temp_dir.path()))
+            .fully_qualified_string()
             .unwrap(),
         expected
     );
@@ -1878,8 +1847,8 @@ delimiter = "+"
 
 #[test]
 fn test_fully_qualified_string_without_dev_suffix_when_tagged() {
-    let temp_dir = create_temp_git_repo(true);
-    let config_path = temp_dir.path().join("bump.toml");
+    let _repo = create_temp_git_repo(true);
+    let config_path = _repo.path().join("bump.toml");
     let config_content = r#"prefix = "v"
 
 [version]
@@ -1901,7 +1870,7 @@ delimiter = "+"
     let version = Version::from_file(&config_path).unwrap();
     assert_eq!(
         version
-            .fully_qualified_string(Some(temp_dir.path()))
+            .fully_qualified_string()
             .unwrap(),
         "v1.2.3"
     );
@@ -1909,9 +1878,9 @@ delimiter = "+"
 
 #[test]
 fn test_update_cargo_toml_missing_package_section() {
-    let temp_dir = create_temp_git_repo(false);
-    let config_path = temp_dir.path().join("bump.toml");
-    let cargo_path = temp_dir.path().join("Cargo.toml");
+    let _repo = create_temp_git_repo(false);
+    let config_path = _repo.path().join("bump.toml");
+    let cargo_path = _repo.path().join("Cargo.toml");
 
     // Create a test bump.toml file
     let config_content = r#"prefix = "v"
@@ -1940,7 +1909,7 @@ serde = "1.0"
 
     // Load version and try to update - should fail
     let version = Version::from_file(&config_path).unwrap();
-    let result = crate::update::cargo_toml(&version, &cargo_path, Some(temp_dir.path()));
+    let result = crate::update::cargo_toml(&version, &cargo_path);
 
     assert!(result.is_err());
     match result.unwrap_err() {

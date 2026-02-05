@@ -251,15 +251,28 @@ delimiter = "+"
         }
     }
 
-    pub fn fully_qualified_string(
-        &self,
-        repo_path: Option<&Path>,
-    ) -> Result<String, BumpError> {
-        if !is_git_repository(repo_path) {
-            return Err(BumpError::LogicError("Not in a git repository".to_string()));
+    pub fn fully_qualified_string(&self) -> Result<String, BumpError> {
+        if !is_git_repository() {
+            // Not in a git repository - return base version without development suffix
+            if self.candidate > 0 {
+                return Ok(format!(
+                    "{}{}.{}.{}{}{}",
+                    self.prefix,
+                    self.major,
+                    self.minor,
+                    self.patch,
+                    self.config.candidate.delimiter,
+                    self.candidate
+                ));
+            } else {
+                return Ok(format!(
+                    "{}{}.{}.{}",
+                    self.prefix, self.major, self.minor, self.patch
+                ));
+            }
         }
 
-        let tagged = get_git_tag(false, repo_path).is_ok();
+        let tagged = get_git_tag(false).is_ok();
         let base = format!(
             "{}{}.{}.{}",
             self.prefix, self.major, self.minor, self.patch
@@ -281,13 +294,13 @@ delimiter = "+"
                 "{}{}{}",
                 base,
                 self.config.development.delimiter,
-                get_development_suffix(&self, repo_path)?
+                get_development_suffix(&self)?
             ),
             (false, _) => format!(
                 "{}{}{}",
                 candidate,
                 self.config.development.delimiter,
-                get_development_suffix(&self, repo_path)?
+                get_development_suffix(&self)?
             ),
         };
 
