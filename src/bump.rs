@@ -1,11 +1,26 @@
 use crate::lang::{self, Language};
-use crate::version::{CandidateSection, Config, DevelopmentSection, Version, VersionSection};
+use crate::version::{default_config, Version};
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
 };
+
+#[cfg(test)]
+use std::cell::RefCell;
+
+#[cfg(test)]
+thread_local! {
+    /// Test-only: allows tests to override the git repository path without changing CWD
+    static TEST_REPO_PATH: RefCell<Option<PathBuf>> = RefCell::new(None);
+}
+
+#[cfg(test)]
+/// Test-only: Set the repository path for git operations in this thread
+pub fn set_test_repo_path(path: Option<PathBuf>) {
+    TEST_REPO_PATH.with(|p| *p.borrow_mut() = path);
+}
 
 pub enum PointType {
     Major,
@@ -100,24 +115,7 @@ pub fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
 
         match version_parts {
             Ok(parts) if parts.len() == 3 => {
-                let config = Config {
-                    prefix: "v".to_string(),
-                    timestamp: None,
-                    version: VersionSection {
-                        major: parts[0],
-                        minor: parts[1],
-                        patch: parts[2],
-                        candidate: 0,
-                    },
-                    candidate: CandidateSection {
-                        promotion: "minor".to_string(),
-                        delimiter: "-rc".to_string(),
-                    },
-                    development: DevelopmentSection {
-                        promotion: "git_sha".to_string(),
-                        delimiter: "+".to_string(),
-                    },
-                };
+                let config = default_config("v".to_string(), parts[0], parts[1], parts[2], 0);
 
                 Ok(Version {
                     prefix: "v".to_string(),
@@ -258,77 +256,69 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
+fn run_git(command: &str) -> Result<String, BumpError> {
+    let args: Vec<&str> = command.split_whitespace().collect();
+    let mut cmd = ProcessCommand::new("git");
+    
+    #[cfg(test)]
+    {
+        // Check if test has set a specific repo path
+        TEST_REPO_PATH.with(|p| {
+            if let Some(ref path) = *p.borrow() {
+                cmd.arg("-C").arg(path);
+            }
+        });
+    }
+    
+    let output = cmd
+        .args(&args)
+        .output()
+        .map_err(|e| BumpError::Git(format!("git {}: {e}", command)))?;
+    if !output.status.success() {
+        return Err(BumpError::Git(
+            format!("git {}: {}", command, String::from_utf8_lossy(&output.stderr)),
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return Ok(stdout);
+    }
+    Ok(String::from_utf8_lossy(&output.stderr).trim().to_string())
+}
+
 pub fn is_git_repository() -> bool {
-    ProcessCommand::new("git")
-        .args(["rev-parse", "--git-dir"])
+    let mut cmd = ProcessCommand::new("git");
+    
+    #[cfg(test)]
+    {
+        // Check if test has set a specific repo path
+        TEST_REPO_PATH.with(|p| {
+            if let Some(ref path) = *p.borrow() {
+                cmd.arg("-C").arg(path);
+            }
+        });
+    }
+    
+    cmd.args(["rev-parse", "--git-dir"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
 
 pub fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
-    let output: std::process::Output = if last_tag {
-        ProcessCommand::new("git")
-            .args(["describe", "--tags", "--abbrev=0"])
-            .output()
-            .map_err(|e| {
-                BumpError::Git(format!(
-                    "failed to run 'git describe --tags --abbrev=0': {e}"
-                ))
-            })?
+    if last_tag {
+        run_git("describe --tags --abbrev=0")
     } else {
-        ProcessCommand::new("git")
-            .args(["describe", "--exact-match", "--tags", "HEAD"])
-            .output()
-            .map_err(|e| {
-                BumpError::Git(format!(
-                    "failed to run 'git describe --exact-match --tags HEAD': {e}"
-                ))
-            })?
-    };
-
-    if !output.status.success() {
-        return Err(BumpError::Git("Current commit is not tagged".to_string()));
+        run_git("describe --exact-match --tags HEAD")
     }
-
-    let tag = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(tag)
 }
 
 pub fn get_git_commit_sha() -> Result<String, BumpError> {
-    let output = ProcessCommand::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .map_err(|e| BumpError::Git(format!("failed to run 'git rev-parse --short HEAD': {e}")))?;
-
-    if !output.status.success() {
-        return Err(BumpError::Git(
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ));
-    }
-
-    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(sha)
+    run_git("rev-parse --short HEAD")
 }
 
 pub fn get_git_branch() -> Result<String, BumpError> {
-    let output = ProcessCommand::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .map_err(|e| {
-            BumpError::Git(format!(
-                "failed to run 'git rev-parse --abbrev-ref HEAD': {e}"
-            ))
-        })?;
-
-    if !output.status.success() {
-        return Err(BumpError::Git(
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ));
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(branch)
+    run_git("rev-parse --abbrev-ref HEAD")
 }
 
 pub fn get_development_suffix(version: &Version) -> Result<String, BumpError> {

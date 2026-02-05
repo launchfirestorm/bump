@@ -1,9 +1,9 @@
 use crate::bump::{
-    BumpError, BumpType, PointType, 
+    BumpError, BumpType, PointType,
+    get_development_suffix,
+    get_git_tag,
     is_git_repository,
     resolve_path, 
-    get_development_suffix, 
-    get_git_tag
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,33 @@ pub struct Config {
     pub development: DevelopmentSection,
 }
 
+pub(crate) fn default_config(
+    prefix: String,
+    major: u32,
+    minor: u32,
+    patch: u32,
+    candidate: u32,
+) -> Config {
+    Config {
+        prefix,
+        timestamp: None,
+        version: VersionSection {
+            major,
+            minor,
+            patch,
+            candidate,
+        },
+        candidate: CandidateSection {
+            promotion: "minor".to_string(),
+            delimiter: "-rc".to_string(),
+        },
+        development: DevelopmentSection {
+            promotion: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    }
+}
+
 #[derive(Debug)]
 pub struct Version {
     pub prefix: String,
@@ -61,24 +88,7 @@ fn get_time(format: &Option<String>) -> Option<String> {
 
 impl Version {
     pub fn default(path: &Path) -> Self {
-        let config = Config {
-            prefix: "v".to_string(),
-            timestamp: None,
-            version: VersionSection {
-                major: 0,
-                minor: 1,
-                patch: 0,
-                candidate: 0,
-            },
-            candidate: CandidateSection {
-                promotion: "minor".to_string(),
-                delimiter: "-rc".to_string(),
-            },
-            development: DevelopmentSection {
-                promotion: "git_sha".to_string(),
-                delimiter: "+".to_string(),
-            },
-        };
+        let config = default_config("v".to_string(), 0, 1, 0, 0);
 
         Version {
             prefix: config.prefix.clone(),
@@ -220,22 +230,22 @@ delimiter = "+"
     }
 
     pub fn to_string(&self, bump_type: &BumpType) -> String {
+        let base = format!(
+            "{}{}.{}.{}",
+            self.prefix, self.major, self.minor, self.patch
+        );
+        let candidate = format!(
+            "{}{}.{}.{}{}{}",
+            self.prefix,
+            self.major,
+            self.minor,
+            self.patch,
+            self.config.candidate.delimiter,
+            self.candidate
+        );
         match bump_type {
-            BumpType::Prefix(_) | BumpType::Point(_) | BumpType::Release => {
-                format!(
-                    "{}{}.{}.{}",
-                    self.prefix, self.major, self.minor, self.patch
-                )
-            }
-            BumpType::Candidate => format!(
-                "{}{}.{}.{}{}{}",
-                self.prefix,
-                self.major,
-                self.minor,
-                self.patch,
-                self.config.candidate.delimiter,
-                self.candidate
-            ),
+            BumpType::Prefix(_) | BumpType::Point(_) | BumpType::Release => base,
+            BumpType::Candidate => candidate,
             // Useful for cmake and other tools
             BumpType::Base => format!("{}.{}.{}", self.major, self.minor, self.patch),
         }
@@ -243,42 +253,52 @@ delimiter = "+"
 
     pub fn fully_qualified_string(&self) -> Result<String, BumpError> {
         if !is_git_repository() {
-            return Err(BumpError::LogicError("Not in a git repository".to_string()));
+            // Not in a git repository - return base version without development suffix
+            if self.candidate > 0 {
+                return Ok(format!(
+                    "{}{}.{}.{}{}{}",
+                    self.prefix,
+                    self.major,
+                    self.minor,
+                    self.patch,
+                    self.config.candidate.delimiter,
+                    self.candidate
+                ));
+            } else {
+                return Ok(format!(
+                    "{}{}.{}.{}",
+                    self.prefix, self.major, self.minor, self.patch
+                ));
+            }
         }
 
         let tagged = get_git_tag(false).is_ok();
+        let base = format!(
+            "{}{}.{}.{}",
+            self.prefix, self.major, self.minor, self.patch
+        );
+        let candidate = format!(
+            "{}{}.{}.{}{}{}",
+            self.prefix,
+            self.major,
+            self.minor,
+            self.patch,
+            self.config.candidate.delimiter,
+            self.candidate
+        );
 
         let version_string = match (tagged, self.candidate) {
-            (true, 0) => format!(
-                "{}{}.{}.{}",
-                self.prefix, self.major, self.minor, self.patch
-            ),
-            (true, _) => format!(
-                "{}{}.{}.{}{}{}",
-                self.prefix,
-                self.major,
-                self.minor,
-                self.patch,
-                self.config.candidate.delimiter,
-                self.candidate
-            ),
+            (true, 0) => base,
+            (true, _) => candidate,
             (false, 0) => format!(
-                "{}{}.{}.{}{}{}",
-                self.prefix,
-                self.major,
-                self.minor,
-                self.patch,
+                "{}{}{}",
+                base,
                 self.config.development.delimiter,
                 get_development_suffix(&self)?
             ),
             (false, _) => format!(
-                "{}{}.{}.{}{}{}{}{}",
-                self.prefix,
-                self.major,
-                self.minor,
-                self.patch,
-                self.config.candidate.delimiter,
-                self.candidate,
+                "{}{}{}",
+                candidate,
                 self.config.development.delimiter,
                 get_development_suffix(&self)?
             ),
@@ -313,24 +333,7 @@ delimiter = "+"
                 .map_err(|_| BumpError::ParseError("invalid CANDIDATE value".to_string()))
         })?;
 
-        let default_config = Config {
-            prefix: prefix.clone(),
-            timestamp: None,
-            version: VersionSection {
-                major,
-                minor,
-                patch,
-                candidate,
-            },
-            candidate: CandidateSection {
-                promotion: "minor".to_string(),
-                delimiter: "-rc".to_string(),
-            },
-            development: DevelopmentSection {
-                promotion: "git_sha".to_string(),
-                delimiter: "+".to_string(),
-            },
-        };
+        let default_config = default_config(prefix.clone(), major, minor, patch, candidate);
 
         Ok(Version {
             prefix,

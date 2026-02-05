@@ -6,7 +6,10 @@ use std::fs;
 use std::path::Path;
 
 
-pub(crate) fn cargo_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
+pub(crate) fn cargo_toml(
+    version: &Version,
+    path: &Path,
+) -> Result<(), BumpError> {
     // Read existing Cargo.toml
     let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
 
