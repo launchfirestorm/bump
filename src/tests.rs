@@ -810,11 +810,11 @@ delimiter = "+"
 
 #[test]
 fn test_timestamp_in_c_header_output() {
-    let temp_dir = TempDir::new().unwrap();
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path = temp_dir.path().join("version.h");
+    with_temp_git_repo(|temp_dir| {
+        let config_path = temp_dir.path().join("bump.toml");
+        let output_path = temp_dir.path().join("version.h");
 
-    let config_content = r#"prefix = "v"
+        let config_content = r#"prefix = "v"
 timestamp = "%Y-%m-%d"
 
 [version]
@@ -831,17 +831,18 @@ delimiter = "-rc"
 promotion = "git_sha"
 delimiter = "+"
 "#;
-    fs::write(&config_path, config_content).unwrap();
+        fs::write(&config_path, config_content).unwrap();
 
-    let version = Version::from_file(&config_path).unwrap();
+        let version = Version::from_file(&config_path).unwrap();
 
-    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
+        crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
 
-    let header_content = fs::read_to_string(&output_path).unwrap();
+        let header_content = fs::read_to_string(&output_path).unwrap();
 
-    // Should contain VERSION_TIMESTAMP define
-    assert!(header_content.contains("#define VERSION_TIMESTAMP"));
-    assert!(header_content.contains(version.timestamp.as_ref().unwrap().as_str()));
+        // Should contain VERSION_TIMESTAMP define
+        assert!(header_content.contains("#define VERSION_TIMESTAMP"));
+        assert!(header_content.contains(version.timestamp.as_ref().unwrap().as_str()));
+    });
 }
 
 #[test]
@@ -1743,13 +1744,13 @@ delimiter = "+"
 
 #[test]
 fn test_multiple_output_files() {
-    let temp_dir = TempDir::new().unwrap();
-    let config_path = temp_dir.path().join("bump.toml");
-    let output_path_1 = temp_dir.path().join("version1.h");
-    let output_path_2 = temp_dir.path().join("include/version2.h");
+    with_temp_git_repo(|temp_dir| {
+        let config_path = temp_dir.path().join("bump.toml");
+        let output_path_1 = temp_dir.path().join("version1.h");
+        let output_path_2 = temp_dir.path().join("include/version2.h");
 
-    // Create a test bump.toml file
-    let config_content = r#"prefix = "v"
+        // Create a test bump.toml file
+        let config_content = r#"prefix = "v"
 
 [version]
 major = 1
@@ -1765,42 +1766,43 @@ delimiter = "-rc"
 promotion = "git_sha"
 delimiter = "+"
 "#;
-    fs::write(&config_path, config_content).unwrap();
-    let version = Version::from_file(&config_path).unwrap();
+        fs::write(&config_path, config_content).unwrap();
+        let version = Version::from_file(&config_path).unwrap();
 
-    // Create include directory
-    fs::create_dir_all(output_path_2.parent().unwrap()).unwrap();
+        // Create include directory
+        fs::create_dir_all(output_path_2.parent().unwrap()).unwrap();
 
-    // Generate multiple C headers
-    crate::lang::output_file(
-        &crate::lang::Language::C,
-        &version,
-        &output_path_1,
-    )
-    .unwrap();
+        // Generate multiple C headers
+        crate::lang::output_file(
+            &crate::lang::Language::C,
+            &version,
+            &output_path_1,
+        )
+        .unwrap();
 
-    crate::lang::output_file(
-        &crate::lang::Language::C,
-        &version,
-        &output_path_2,
-    )
-    .unwrap();
+        crate::lang::output_file(
+            &crate::lang::Language::C,
+            &version,
+            &output_path_2,
+        )
+        .unwrap();
 
-    // Verify both files exist and have correct content
-    assert!(output_path_1.exists());
-    assert!(output_path_2.exists());
+        // Verify both files exist and have correct content
+        assert!(output_path_1.exists());
+        assert!(output_path_2.exists());
 
-    let content_1 = fs::read_to_string(&output_path_1).unwrap();
-    let content_2 = fs::read_to_string(&output_path_2).unwrap();
+        let content_1 = fs::read_to_string(&output_path_1).unwrap();
+        let content_2 = fs::read_to_string(&output_path_2).unwrap();
 
-    // Both should have the same version info
-    for content in [&content_1, &content_2] {
-        assert!(content.contains("#define VERSION_MAJOR 1"));
-        assert!(content.contains("#define VERSION_MINOR 2"));
-        assert!(content.contains("#define VERSION_PATCH 3"));
-        assert!(content.contains("#define VERSION_STRING \""));
-        assert!(content.contains("v1.2.3"));
-    }
+        // Both should have the same version info
+        for content in [&content_1, &content_2] {
+            assert!(content.contains("#define VERSION_MAJOR 1"));
+            assert!(content.contains("#define VERSION_MINOR 2"));
+            assert!(content.contains("#define VERSION_PATCH 3"));
+            assert!(content.contains("#define VERSION_STRING \""));
+            assert!(content.contains("v1.2.3"));
+        }
+    });
 }
 
 #[test]
