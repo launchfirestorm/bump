@@ -330,24 +330,7 @@ fn version_to_file() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 4);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -508,24 +491,7 @@ fn version_round_trip() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 5,
-            minor: 10,
-            patch: 15,
-            candidate: 2,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(5, 10, 15, 2);
 
     let original_version = Version {
         prefix: "v".to_string(),
@@ -886,24 +852,7 @@ fn test_timestamp_roundtrip() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let config = BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 0,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let config = make_default_config(1, 2, 3, 0);
 
     let version = Version {
         prefix: "v".to_string(),
@@ -1124,24 +1073,8 @@ fn version_bump_patch() {
 
 #[test]
 fn version_bump_candidate() {
-    let config = BumpConfig {
-        prefix: "prefix_".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major: 1,
-            minor: 2,
-            patch: 3,
-            candidate: 4,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
+    let mut config = make_default_config(1, 2, 3, 4);
+    config.prefix = "prefix_".to_string();
 
     let mut version = Version {
         prefix: "prefix_".to_string(),
