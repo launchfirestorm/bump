@@ -354,7 +354,7 @@ fn version_to_string_candidate() {
 
 #[test]
 fn version_to_header() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let header_path = temp_dir.path().join("version.h");
 
     let config = make_default_config(1, 2, 3, 4);
@@ -374,7 +374,7 @@ fn version_to_header() {
         &crate::lang::Language::C,
         &version,
         &header_path,
-        None,
+        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -779,7 +779,7 @@ delimiter = "+"
 
 #[test]
 fn test_timestamp_not_in_c_header_when_none() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let config_path = temp_dir.path().join("bump.toml");
     let output_path = temp_dir.path().join("version.h");
 
@@ -805,7 +805,13 @@ delimiter = "+"
 
     assert!(version.timestamp.is_none());
 
-    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path, None).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        &output_path,
+        Some(temp_dir.path()),
+    )
+    .unwrap();
 
     let header_content = fs::read_to_string(&output_path).unwrap();
 
@@ -1302,7 +1308,7 @@ delimiter = "+"
 
 #[test]
 fn test_gen_command_c_output() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let config_path = temp_dir.path().join("bump.toml");
     let output_path = temp_dir.path().join("version.h");
 
@@ -1327,7 +1333,13 @@ delimiter = "+"
 
     // Load version and generate C header
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path, None).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        &output_path,
+        Some(temp_dir.path()),
+    )
+    .unwrap();
 
     // Verify C header content
     let header_content = fs::read_to_string(&output_path).unwrap();
@@ -1345,7 +1357,7 @@ delimiter = "+"
 
 #[test]
 fn test_gen_command_go_output() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let config_path = temp_dir.path().join("bump.toml");
     let output_path = temp_dir.path().join("version.go");
 
@@ -1374,7 +1386,7 @@ delimiter = "+"
         &crate::lang::Language::Go,
         &version,
         &output_path,
-        None,
+        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1393,7 +1405,7 @@ delimiter = "+"
 
 #[test]
 fn test_gen_command_java_output() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let config_path = temp_dir.path().join("bump.toml");
     let output_path = temp_dir.path().join("Version.java");
 
@@ -1422,7 +1434,7 @@ delimiter = "_"
         &crate::lang::Language::Java,
         &version,
         &output_path,
-        None,
+        Some(temp_dir.path()),
     )
     .unwrap();
 
@@ -1441,7 +1453,7 @@ delimiter = "_"
 
 #[test]
 fn test_gen_command_csharp_output() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let config_path = temp_dir.path().join("bump.toml");
     let output_path = temp_dir.path().join("Version.cs");
 
@@ -1470,7 +1482,7 @@ delimiter = "-dev"
         &crate::lang::Language::CSharp,
         &version,
         &output_path,
-        None,
+        Some(temp_dir.path()),
     )
     .unwrap();
 
