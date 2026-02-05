@@ -1,38 +1,19 @@
-use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
 // Import types from bump module
 use crate::bump::{
-    BumpError, BumpType, PointType, ensure_directory_exists, get_git_branch, get_git_commit_sha,
-    resolve_path,
+    BumpError, BumpType, PointType, ensure_directory_exists, get_git_branch,
+    get_git_commit_sha, resolve_path,
 };
 
 // Import types from version module
 use crate::version::{
     CandidateSection, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
 };
-
-fn run_git(args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .output()
-        .unwrap_or_else(|err| panic!("failed to run git {:?}: {}", args, err));
-
-    if !output.status.success() {
-        panic!(
-            "git {:?} failed: {}",
-            args,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
 
 fn run_git_in(path: &Path, args: &[&str]) {
     let output = Command::new("git")
@@ -52,43 +33,24 @@ fn run_git_in(path: &Path, args: &[&str]) {
     }
 }
 
-#[derive(Clone, Copy)]
-enum RepoKind {
-    Tagged,
-    Untagged,
-}
+fn run_git_in_output(path: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run git -C {} {:?}: {}", path.display(), args, err));
 
-struct DirGuard {
-    original: PathBuf,
-}
-
-impl DirGuard {
-    fn new(path: &Path) -> Self {
-        let original = env::current_dir().expect("failed to read current directory");
-        env::set_current_dir(path).unwrap_or_else(|err| {
-            panic!("failed to set current directory to {}: {}", path.display(), err)
-        });
-        Self { original }
+    if !output.status.success() {
+        panic!(
+            "git -C {} {:?} failed: {}",
+            path.display(),
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
-}
 
-impl Drop for DirGuard {
-    fn drop(&mut self) {
-        let _ = env::set_current_dir(&self.original);
-    }
-}
-
-fn with_cwd<F, R>(path: &Path, f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    let _guard = DirGuard::new(path);
-    f()
-}
-
-struct SharedRepos {
-    tagged: TempDir,
-    untagged: TempDir,
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 fn init_repo(path: &Path) {
@@ -98,39 +60,18 @@ fn init_repo(path: &Path) {
     run_git_in(path, &["commit", "--allow-empty", "-m", "Initial commit"]);
 }
 
-fn shared_repos() -> &'static SharedRepos {
-    static SHARED_REPOS: OnceLock<SharedRepos> = OnceLock::new();
-    SHARED_REPOS.get_or_init(|| {
-        let tagged = TempDir::new().unwrap();
-        let untagged = TempDir::new().unwrap();
-        init_repo(tagged.path());
-        init_repo(untagged.path());
-        run_git_in(tagged.path(), &["tag", "v1.2.3"]);
-        SharedRepos { tagged, untagged }
-    })
+fn create_temp_git_repo(tagged: bool) -> TempDir {
+    let temp_dir = TempDir::new().unwrap();
+    let repo_path = temp_dir.path();
+    init_repo(repo_path);
+    if tagged {
+        run_git_in(repo_path, &["tag", "v1.2.3"]);
+    }
+    temp_dir
 }
 
-fn with_shared_git_repo<F, R>(kind: RepoKind, f: F) -> R
-where
-    F: FnOnce(&TempDir) -> R,
-{
-    let _lock = CWD_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    let repo = shared_repos();
-    let selected = match kind {
-        RepoKind::Tagged => &repo.tagged,
-        RepoKind::Untagged => &repo.untagged,
-    };
-    let workdir = TempDir::new_in(selected.path()).unwrap();
-    with_cwd(selected.path(), || f(&workdir))
-}
-
-static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-fn git_rev_parse_short() -> String {
-    run_git(&["rev-parse", "--short", "HEAD"])
+fn git_rev_parse_short_in(path: &Path) -> String {
+    run_git_in_output(path, &["rev-parse", "--short", "HEAD"])
 }
 
 fn write_bump_toml(path: &Path, content: &str) {
@@ -433,6 +374,7 @@ fn version_to_header() {
         &crate::lang::Language::C,
         &version,
         &header_path,
+        None,
     )
     .unwrap();
 
@@ -606,15 +548,14 @@ delimiter = "+"
 
 #[test]
 fn commit_sha() {
-    with_shared_git_repo(RepoKind::Untagged, |_temp_dir| {
-        let commit_sha = get_git_commit_sha().unwrap();
-        assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
-        assert_eq!(commit_sha.len(), 7, "Commit SHA should be 7 characters long");
-        assert!(
-            commit_sha.chars().all(|c| c.is_ascii_hexdigit()),
-            "Commit SHA should only contain hex digits"
-        );
-    });
+    let temp_dir = create_temp_git_repo(false);
+    let commit_sha = get_git_commit_sha(Some(temp_dir.path())).unwrap();
+    assert!(!commit_sha.is_empty(), "Commit SHA should not be empty");
+    assert_eq!(commit_sha.len(), 7, "Commit SHA should be 7 characters long");
+    assert!(
+        commit_sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "Commit SHA should only contain hex digits"
+    );
 }
 
 #[test]
@@ -796,9 +737,9 @@ delimiter = "+"
 
 #[test]
 fn test_timestamp_in_c_header_output() {
-    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
-        let config_path = temp_dir.path().join("bump.toml");
-        let output_path = temp_dir.path().join("version.h");
+    let temp_dir = create_temp_git_repo(false);
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path = temp_dir.path().join("version.h");
 
         let config_content = r#"prefix = "v"
 timestamp = "%Y-%m-%d"
@@ -819,16 +760,21 @@ delimiter = "+"
 "#;
         fs::write(&config_path, config_content).unwrap();
 
-        let version = Version::from_file(&config_path).unwrap();
+    let version = Version::from_file(&config_path).unwrap();
 
-        crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        &output_path,
+        Some(temp_dir.path()),
+    )
+    .unwrap();
 
-        let header_content = fs::read_to_string(&output_path).unwrap();
+    let header_content = fs::read_to_string(&output_path).unwrap();
 
-        // Should contain VERSION_TIMESTAMP define
-        assert!(header_content.contains("#define VERSION_TIMESTAMP"));
-        assert!(header_content.contains(version.timestamp.as_ref().unwrap().as_str()));
-    });
+    // Should contain VERSION_TIMESTAMP define
+    assert!(header_content.contains("#define VERSION_TIMESTAMP"));
+    assert!(header_content.contains(version.timestamp.as_ref().unwrap().as_str()));
 }
 
 #[test]
@@ -859,7 +805,7 @@ delimiter = "+"
 
     assert!(version.timestamp.is_none());
 
-    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path, None).unwrap();
 
     let header_content = fs::read_to_string(&output_path).unwrap();
 
@@ -1381,7 +1327,7 @@ delimiter = "+"
 
     // Load version and generate C header
     let version = Version::from_file(&config_path).unwrap();
-    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path).unwrap();
+    crate::lang::output_file(&crate::lang::Language::C, &version, &output_path, None).unwrap();
 
     // Verify C header content
     let header_content = fs::read_to_string(&output_path).unwrap();
@@ -1428,6 +1374,7 @@ delimiter = "+"
         &crate::lang::Language::Go,
         &version,
         &output_path,
+        None,
     )
     .unwrap();
 
@@ -1475,6 +1422,7 @@ delimiter = "_"
         &crate::lang::Language::Java,
         &version,
         &output_path,
+        None,
     )
     .unwrap();
 
@@ -1522,6 +1470,7 @@ delimiter = "-dev"
         &crate::lang::Language::CSharp,
         &version,
         &output_path,
+        None,
     )
     .unwrap();
 
@@ -1697,10 +1646,10 @@ delimiter = "+"
 
 #[test]
 fn test_multiple_output_files() {
-    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
-        let config_path = temp_dir.path().join("bump.toml");
-        let output_path_1 = temp_dir.path().join("version1.h");
-        let output_path_2 = temp_dir.path().join("include/version2.h");
+    let temp_dir = create_temp_git_repo(false);
+    let config_path = temp_dir.path().join("bump.toml");
+    let output_path_1 = temp_dir.path().join("version1.h");
+    let output_path_2 = temp_dir.path().join("include/version2.h");
 
         // Create a test bump.toml file
         let config_content = r#"prefix = "v"
@@ -1726,19 +1675,21 @@ delimiter = "+"
         fs::create_dir_all(output_path_2.parent().unwrap()).unwrap();
 
         // Generate multiple C headers
-        crate::lang::output_file(
-            &crate::lang::Language::C,
-            &version,
-            &output_path_1,
-        )
-        .unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        &output_path_1,
+        Some(temp_dir.path()),
+    )
+    .unwrap();
 
-        crate::lang::output_file(
-            &crate::lang::Language::C,
-            &version,
-            &output_path_2,
-        )
-        .unwrap();
+    crate::lang::output_file(
+        &crate::lang::Language::C,
+        &version,
+        &output_path_2,
+        Some(temp_dir.path()),
+    )
+    .unwrap();
 
         // Verify both files exist and have correct content
         assert!(output_path_1.exists());
@@ -1748,29 +1699,27 @@ delimiter = "+"
         let content_2 = fs::read_to_string(&output_path_2).unwrap();
 
         // Both should have the same version info
-        for content in [&content_1, &content_2] {
-            assert!(content.contains("#define VERSION_MAJOR 1"));
-            assert!(content.contains("#define VERSION_MINOR 2"));
-            assert!(content.contains("#define VERSION_PATCH 3"));
-            assert!(content.contains("#define VERSION_STRING \""));
-            assert!(content.contains("v1.2.3"));
-        }
-    });
+    for content in [&content_1, &content_2] {
+        assert!(content.contains("#define VERSION_MAJOR 1"));
+        assert!(content.contains("#define VERSION_MINOR 2"));
+        assert!(content.contains("#define VERSION_PATCH 3"));
+        assert!(content.contains("#define VERSION_STRING \""));
+        assert!(content.contains("v1.2.3"));
+    }
 }
 
 #[test]
 fn test_git_branch_detection() {
-    with_shared_git_repo(RepoKind::Untagged, |_temp_dir| {
-        let branch = get_git_branch().unwrap();
-        assert!(!branch.is_empty(), "Branch name should not be empty");
-    });
+    let temp_dir = create_temp_git_repo(false);
+    let branch = get_git_branch(Some(temp_dir.path())).unwrap();
+    assert!(!branch.is_empty(), "Branch name should not be empty");
 }
 
 #[test]
 fn test_update_cargo_toml() {
-    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
-        let config_path = temp_dir.path().join("bump.toml");
-        let cargo_path = temp_dir.path().join("Cargo.toml");
+    let temp_dir = create_temp_git_repo(false);
+    let config_path = temp_dir.path().join("bump.toml");
+    let cargo_path = temp_dir.path().join("Cargo.toml");
 
         // Create a test bump.toml file
         let config_content = r#"prefix = "v"
@@ -1805,21 +1754,21 @@ serde = "1.0"
 
         // Load version and update Cargo.toml
         let version = Version::from_file(&config_path).unwrap();
-        crate::update::cargo_toml(&version, &cargo_path).unwrap();
+    crate::update::cargo_toml(&version, &cargo_path, Some(temp_dir.path())).unwrap();
 
         // Verify Cargo.toml content
         let updated_content = fs::read_to_string(&cargo_path).unwrap();
-        let expected_version = version
-            .fully_qualified_string()
-            .unwrap()
-            .trim_start_matches('v')
-            .to_string();
+    let expected_version = version
+        .fully_qualified_string(Some(temp_dir.path()))
+        .unwrap()
+        .trim_start_matches('v')
+        .to_string();
 
         // Version should be updated (without 'v' prefix)
-        assert!(updated_content.contains(&format!(
-            "version = \"{}\"",
-            expected_version
-        )));
+    assert!(updated_content.contains(&format!(
+        "version = \"{}\"",
+        expected_version
+    )));
 
         // Other fields should be preserved
         assert!(updated_content.contains("name = \"test-package\""));
@@ -1829,16 +1778,15 @@ serde = "1.0"
         assert!(updated_content.contains("# This is a comment that should be preserved"));
 
         // Dependencies should be preserved
-        assert!(updated_content.contains("[dependencies]"));
-        assert!(updated_content.contains("serde = \"1.0\""));
-    });
+    assert!(updated_content.contains("[dependencies]"));
+    assert!(updated_content.contains("serde = \"1.0\""));
 }
 
 #[test]
 fn test_update_cargo_toml_with_dev_suffix() {
-    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
-        let config_path = temp_dir.path().join("bump.toml");
-        let cargo_path = temp_dir.path().join("Cargo.toml");
+    let temp_dir = create_temp_git_repo(false);
+    let config_path = temp_dir.path().join("bump.toml");
+    let cargo_path = temp_dir.path().join("Cargo.toml");
 
         // Create a test bump.toml file
         let config_content = r#"prefix = "v"
@@ -1869,27 +1817,26 @@ edition = "2021"
 
         // Load version and update Cargo.toml with development suffix
         let version = Version::from_file(&config_path).unwrap();
-        crate::update::cargo_toml(&version, &cargo_path).unwrap();
+    crate::update::cargo_toml(&version, &cargo_path, Some(temp_dir.path())).unwrap();
 
         // Verify Cargo.toml content - should have version with build metadata
         let updated_content = fs::read_to_string(&cargo_path).unwrap();
-        let expected_version = version
-            .fully_qualified_string()
-            .unwrap()
-            .trim_start_matches('v')
-            .to_string();
-        assert!(updated_content.contains(&format!(
-            "version = \"{}\"",
-            expected_version
-        )));
-    });
+    let expected_version = version
+        .fully_qualified_string(Some(temp_dir.path()))
+        .unwrap()
+        .trim_start_matches('v')
+        .to_string();
+    assert!(updated_content.contains(&format!(
+        "version = \"{}\"",
+        expected_version
+    )));
 }
 
 #[test]
 fn test_fully_qualified_string_with_dev_suffix_when_untagged() {
-    with_shared_git_repo(RepoKind::Untagged, |temp_dir| {
-        let config_path = temp_dir.path().join("bump.toml");
-        let config_content = r#"prefix = "v"
+    let temp_dir = create_temp_git_repo(false);
+    let config_path = temp_dir.path().join("bump.toml");
+    let config_content = r#"prefix = "v"
 
 [version]
 major = 1
@@ -1907,17 +1854,21 @@ delimiter = "+"
 "#;
         write_bump_toml(&config_path, config_content);
 
-        let version = Version::from_file(&config_path).unwrap();
-        let expected = format!("v1.2.3+{}", git_rev_parse_short());
-        assert_eq!(version.fully_qualified_string().unwrap(), expected);
-    });
+    let version = Version::from_file(&config_path).unwrap();
+    let expected = format!("v1.2.3+{}", git_rev_parse_short_in(temp_dir.path()));
+    assert_eq!(
+        version
+            .fully_qualified_string(Some(temp_dir.path()))
+            .unwrap(),
+        expected
+    );
 }
 
 #[test]
 fn test_fully_qualified_string_without_dev_suffix_when_tagged() {
-    with_shared_git_repo(RepoKind::Tagged, |temp_dir| {
-        let config_path = temp_dir.path().join("bump.toml");
-        let config_content = r#"prefix = "v"
+    let temp_dir = create_temp_git_repo(true);
+    let config_path = temp_dir.path().join("bump.toml");
+    let config_content = r#"prefix = "v"
 
 [version]
 major = 1
@@ -1935,14 +1886,18 @@ delimiter = "+"
 "#;
         write_bump_toml(&config_path, config_content);
 
-        let version = Version::from_file(&config_path).unwrap();
-        assert_eq!(version.fully_qualified_string().unwrap(), "v1.2.3");
-    });
+    let version = Version::from_file(&config_path).unwrap();
+    assert_eq!(
+        version
+            .fully_qualified_string(Some(temp_dir.path()))
+            .unwrap(),
+        "v1.2.3"
+    );
 }
 
 #[test]
 fn test_update_cargo_toml_missing_package_section() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = create_temp_git_repo(false);
     let config_path = temp_dir.path().join("bump.toml");
     let cargo_path = temp_dir.path().join("Cargo.toml");
 
@@ -1973,7 +1928,7 @@ serde = "1.0"
 
     // Load version and try to update - should fail
     let version = Version::from_file(&config_path).unwrap();
-    let result = crate::update::cargo_toml(&version, &cargo_path);
+    let result = crate::update::cargo_toml(&version, &cargo_path, Some(temp_dir.path()));
 
     assert!(result.is_err());
     match result.unwrap_err() {

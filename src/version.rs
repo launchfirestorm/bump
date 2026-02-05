@@ -1,9 +1,9 @@
 use crate::bump::{
-    BumpError, BumpType, PointType, 
+    BumpError, BumpType, PointType,
+    get_development_suffix,
+    get_git_tag,
     is_git_repository,
     resolve_path, 
-    get_development_suffix, 
-    get_git_tag
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -251,12 +251,15 @@ delimiter = "+"
         }
     }
 
-    pub fn fully_qualified_string(&self) -> Result<String, BumpError> {
-        if !is_git_repository() {
+    pub fn fully_qualified_string(
+        &self,
+        repo_path: Option<&Path>,
+    ) -> Result<String, BumpError> {
+        if !is_git_repository(repo_path) {
             return Err(BumpError::LogicError("Not in a git repository".to_string()));
         }
 
-        let tagged = get_git_tag(false).is_ok();
+        let tagged = get_git_tag(false, repo_path).is_ok();
         let base = format!(
             "{}{}.{}.{}",
             self.prefix, self.major, self.minor, self.patch
@@ -278,13 +281,13 @@ delimiter = "+"
                 "{}{}{}",
                 base,
                 self.config.development.delimiter,
-                get_development_suffix(&self)?
+                get_development_suffix(&self, repo_path)?
             ),
             (false, _) => format!(
                 "{}{}{}",
                 candidate,
                 self.config.development.delimiter,
-                get_development_suffix(&self)?
+                get_development_suffix(&self, repo_path)?
             ),
         };
 
