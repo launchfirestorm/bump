@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 
 # Bump Installer - Cross Platform Installation Script
 # 
@@ -15,7 +15,11 @@
 #   chmod +x install.sh
 #   ./install.sh
 #
-set -e
+set -eu
+
+# Check pipefail support in a subshell, ignore if unsupported
+# shellcheck disable=SC3040
+(set -o pipefail 2> /dev/null) && set -o pipefail
 
 REPO="launchfirestorm/bump"
 BINARY_NAME="bump"
@@ -46,20 +50,52 @@ get_latest_release_tag() {
   echo "$tag"
 }
 
-detect_os() {
-  case "$OSTYPE" in
-    linux-gnu*)
+detect_platform() {
+  # Detect OS and architecture using uname (POSIX-compliant)
+  # bash compiled with MINGW (e.g. git-bash, used in github windows runners),
+  # unhelpfully includes a version suffix in `uname -s` output, so handle that.
+  # e.g. MINGW64_NT-10-0.19044
+  local kernel
+  kernel=$(uname -s | cut -d- -f1)
+  local machine
+  machine=$(uname -m)
+  local platform="${machine}-${kernel}"
+
+  case $platform in
+    x86_64-Linux)
       OS="linux"
+      ARCH="amd64"
       INSTALL_DIR="/usr/local/bin"
       ;;
-    darwin*)
+    aarch64-Linux)
+      OS="linux"
+      ARCH="arm64"
+      INSTALL_DIR="/usr/local/bin"
+      ;;
+    x86_64-Darwin)
       OS="macos"
+      ARCH="amd64"
       INSTALL_DIR="/usr/local/bin"
       ;;
-    msys*|mingw*|cygwin*)
+    arm64-Darwin)
+      OS="macos"
+      ARCH="arm64"
+      INSTALL_DIR="/usr/local/bin"
+      ;;
+    x86_64-MINGW64_NT|x86_64-MSYS_NT|x86_64-CYGWIN_NT)
       OS="windows"
+      ARCH="amd64"
       BINARY_NAME="bump.exe"
-      # Try Windows-style paths first, fallback to Unix-style
+      if [[ -d "/c/Windows/System32" ]]; then
+        INSTALL_DIR="/c/Program Files/bump"
+      else
+        INSTALL_DIR="/usr/local/bin"
+      fi
+      ;;
+    aarch64-MINGW64_NT|aarch64-MSYS_NT|arm64-MINGW64_NT)
+      OS="windows"
+      ARCH="arm64"
+      BINARY_NAME="bump.exe"
       if [[ -d "/c/Windows/System32" ]]; then
         INSTALL_DIR="/c/Program Files/bump"
       else
@@ -67,19 +103,11 @@ detect_os() {
       fi
       ;;
     *)
-      error "Unsupported OS: $OSTYPE. Supported: Linux, macOS, Windows"
+      error "Unsupported platform: ${platform}. Supported: Linux (x86_64/aarch64), macOS (x86_64/arm64), Windows (x86_64/aarch64)"
       ;;
   esac
-  info "Operating System: $OS"
-}
-
-detect_arch() {
-  case $(uname -m) in
-    x86_64|amd64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    *) error "Unsupported architecture: $(uname -m). Supported: x86_64/amd64, aarch64/arm64" ;;
-  esac
-  info "Architecture: $ARCH"
+  
+  info "Platform: ${platform} (OS: $OS, Architecture: $ARCH)"
 }
 
 check_dependencies() {
@@ -225,8 +253,7 @@ main() {
   echo "Downloading from public GitHub releases - no authentication required"
   echo ""
   
-  detect_os
-  detect_arch
+  detect_platform
   check_dependencies
   install_bump
   verify_installation
