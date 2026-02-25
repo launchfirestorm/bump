@@ -1,5 +1,5 @@
 use crate::lang::{self, Language};
-use crate::version::{default_config, Version};
+use crate::version::{default_semver_config, Version, VersionType, Config};
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
@@ -115,15 +115,17 @@ pub fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
 
         match version_parts {
             Ok(parts) if parts.len() == 3 => {
-                let config = default_config("v".to_string(), parts[0], parts[1], parts[2], 0);
+                let config = default_semver_config("v".to_string(), parts[0], parts[1], parts[2], 0);
 
                 Ok(Version {
                     prefix: "v".to_string(),
                     timestamp: None,
-                    major: parts[0],
-                    minor: parts[1],
-                    patch: parts[2],
-                    candidate: 0,
+                    version_type: VersionType::SemVer {
+                        major: parts[0],
+                        minor: parts[1],
+                        patch: parts[2],
+                        candidate: 0,
+                    },
                     path: path.to_path_buf(),
                     config,
                 })
@@ -163,48 +165,62 @@ pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
     }
 }
 
-pub fn initialize(bumpfile: &str, prefix: &str) -> Result<(), BumpError> {
+pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), BumpError> {
     let filepath = resolve_path(bumpfile);
     ensure_directory_exists(&filepath)?;
 
-    // prompt for tag or manual
-    let mut use_git_tag = String::new();
-    println!("Use git tag for versioning? (y/n): ");
-    io::stdin()
-        .read_line(&mut use_git_tag)
-        .map_err(BumpError::IoError)?;
-    let use_git_tag = use_git_tag.trim().to_lowercase();
-
-    if use_git_tag == "y" {
-        match get_git_tag(true) {
-            Ok(git_tag) => {
-                println!("Found git tag: {git_tag}");
-                let mut git_version = Version::from_string(&git_tag, &filepath)?;
-                git_version.prefix = prefix.to_string(); // Override prefix from CLI
-                git_version.to_file()?;
-            }
-            Err(err) => {
-                return Err(err);
-            }
-        }
-    } else {
-        let mut version = prompt_for_version(&filepath)?;
-        version.prefix = prefix.to_string(); // Override prefix from CLI
+    if use_calver {
+        // CalVer - no git tag detection, just create config
+        let version = Version {
+            prefix: prefix.to_string(),
+            timestamp: None,
+            version_type: VersionType::CalVer { suffix: 0 },
+            path: filepath.clone(),
+            config: crate::version::default_calver_config(prefix.to_string()),
+        };
         version.to_file()?;
+        println!("Initialized new CalVer version file at '{}'", filepath.display());
+    } else {
+        // SemVer - prompt for tag or manual
+        let mut use_git_tag = String::new();
+        println!("Use git tag for versioning? (y/n): ");
+        io::stdin()
+            .read_line(&mut use_git_tag)
+            .map_err(BumpError::IoError)?;
+        let use_git_tag = use_git_tag.trim().to_lowercase();
+
+        if use_git_tag == "y" {
+            match get_git_tag(true) {
+                Ok(git_tag) => {
+                    println!("Found git tag: {git_tag}");
+                    let mut git_version = Version::from_string(&git_tag, &filepath)?;
+                    git_version.prefix = prefix.to_string(); // Override prefix from CLI
+                    git_version.to_file()?;
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            }
+        } else {
+            let mut version = prompt_for_version(&filepath)?;
+            version.prefix = prefix.to_string(); // Override prefix from CLI
+            version.to_file()?;
+        }
+
+        println!("Initialized new SemVer version file at '{}'", filepath.display());
     }
 
-    println!("Initialized new version file at '{}'", filepath.display());
     Ok(())
 }
 
 pub fn print(version: &Version, base: bool) {
     let bump_type = if base {
         BumpType::Base
-    } else if version.candidate > 0 {
-        BumpType::Candidate
     } else {
-        // bump_type doesn't matter here
-        BumpType::Point(PointType::Patch)
+        match &version.version_type {
+            VersionType::SemVer { candidate, .. } if *candidate > 0 => BumpType::Candidate,
+            _ => BumpType::Point(PointType::Patch), // bump_type doesn't matter here
+        }
     };
     print!("{}", version.to_string(&bump_type));
 }
@@ -222,6 +238,27 @@ pub fn print_with_timestamp(version: &Version) {
 pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let mut version = get_version(matches)?;
     let bump_type = get_bump_type(matches)?;
+    
+    // Validate that bump type is compatible with version type
+    match (&version.version_type, &bump_type) {
+        (VersionType::CalVer { .. }, BumpType::Point(_)) => {
+            return Err(BumpError::LogicError(
+                "CalVer does not support major/minor/patch bumps. Use 'bump' without arguments to regenerate date-based version.".to_string()
+            ));
+        }
+        (VersionType::CalVer { .. }, BumpType::Candidate) => {
+            return Err(BumpError::LogicError(
+                "CalVer does not support candidate versions. Use conflict resolution in bump.toml instead.".to_string()
+            ));
+        }
+        (VersionType::CalVer { .. }, BumpType::Release) => {
+            return Err(BumpError::LogicError(
+                "CalVer does not support release bumps.".to_string()
+            ));
+        }
+        _ => {} // Valid combination
+    }
+    
     version.bump(&bump_type)?;
 
     match version.to_file() {
@@ -256,7 +293,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
-fn run_git(command: &str) -> Result<String, BumpError> {
+pub fn run_git(command: &str) -> Result<String, BumpError> {
     let args: Vec<&str> = command.split_whitespace().collect();
     let mut cmd = ProcessCommand::new("git");
     
@@ -322,15 +359,23 @@ pub fn get_git_branch() -> Result<String, BumpError> {
 }
 
 pub fn get_development_suffix(version: &Version) -> Result<String, BumpError> {
-    match version.config.development.promotion.as_str() {
-        "git_sha" => get_git_commit_sha(),
-        "branch" => get_git_branch(),
-        "full" => {
-            let branch = get_git_branch()?;
-            let sha = get_git_commit_sha()?;
-            Ok(format!("{}_{}", branch, sha))
+    match &version.config {
+        Config::SemVer(semver_config) => {
+            match semver_config.development.promotion.as_str() {
+                "git_sha" => get_git_commit_sha(),
+                "branch" => get_git_branch(),
+                "full" => {
+                    let branch = get_git_branch()?;
+                    let sha = get_git_commit_sha()?;
+                    Ok(format!("{}_{}", branch, sha))
+                }
+                _ => get_git_commit_sha(), // default to git_sha
+            }
         }
-        _ => get_git_commit_sha(), // default to git_sha
+        Config::CalVer(_) => {
+            // CalVer doesn't use development suffixes
+            Err(BumpError::LogicError("CalVer does not support development suffixes".to_string()))
+        }
     }
 }
 
@@ -356,21 +401,44 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
     }
 
     // Create the conventional tag name based on version
-    let tag_name = if version.candidate > 0 {
-        format!(
-            "{}{}.{}.{}{}{}",
-            version.prefix,
-            version.major,
-            version.minor,
-            version.patch,
-            version.config.candidate.delimiter,
-            version.candidate
-        )
-    } else {
-        format!(
-            "{}{}.{}.{}",
-            version.prefix, version.major, version.minor, version.patch
-        )
+    let tag_name = match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            match &version.config {
+                Config::SemVer(semver_config) => {
+                    if *candidate > 0 {
+                        format!(
+                            "{}{}.{}.{}{}{}",
+                            version.prefix,
+                            major,
+                            minor,
+                            patch,
+                            semver_config.candidate.delimiter,
+                            candidate
+                        )
+                    } else {
+                        format!(
+                            "{}{}.{}.{}",
+                            version.prefix, major, minor, patch
+                        )
+                    }
+                }
+                _ => unreachable!("SemVer version type must have SemVer config"),
+            }
+        }
+        VersionType::CalVer { suffix } => {
+            match &version.config {
+                Config::CalVer(calver_config) => {
+                    let now = chrono::Utc::now();
+                    let date_str = now.format(&calver_config.format).to_string();
+                    if *suffix > 0 {
+                        format!("{}{}{}{}", version.prefix, date_str, calver_config.conflict.delimiter, suffix)
+                    } else {
+                        format!("{}{}", version.prefix, date_str)
+                    }
+                }
+                _ => unreachable!("CalVer version type must have CalVer config"),
+            }
+        }
     };
 
     // Check if the tag already exists
@@ -394,22 +462,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         cmd.args(["-m", msg]);
     } else {
         // Default conventional commit message
-        let default_message = if version.candidate > 0 {
-            format!(
-                "chore(release): bump version to {}{}.{}.{}{}{}",
-                version.prefix,
-                version.major,
-                version.minor,
-                version.patch,
-                version.config.candidate.delimiter,
-                version.candidate
-            )
-        } else {
-            format!(
-                "chore(release): bump version to {}{}.{}.{}",
-                version.prefix, version.major, version.minor, version.patch
-            )
-        };
+        let default_message = format!("chore(release): bump version to {}", tag_name);
         cmd.args(["-m", &default_message]);
     }
 

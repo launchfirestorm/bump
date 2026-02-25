@@ -25,6 +25,12 @@ pub fn cli() -> Command {
                         .default_value("v")
                         .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
                 )
+                .arg(
+                    Arg::new("calver")
+                        .long("calver")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Initialize with Calendar Versioning instead of Semantic Versioning")
+                )
         )
         .subcommand(
             Command::new("gen")
