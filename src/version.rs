@@ -14,7 +14,15 @@ use std::{
 use toml_edit::{DocumentMut, value};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VersionSection {
+pub struct SemVerFormatSection {
+    pub prefix: String,
+    pub delimiter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>, // strftime format
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemVerVersionSection {
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
@@ -36,9 +44,8 @@ pub struct DevelopmentSection {
 // SemVer Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemVerConfig {
-    pub prefix: String,
-    pub timestamp: Option<String>,
-    pub version: VersionSection,
+    pub format: SemVerFormatSection,
+    pub version: SemVerVersionSection,
     pub candidate: CandidateSection,
     pub development: DevelopmentSection,
 }
@@ -113,9 +120,12 @@ pub(crate) fn default_semver_config(
     candidate: u32,
 ) -> Config {
     Config::SemVer(SemVerConfig {
-        prefix,
-        timestamp: None,
-        version: VersionSection {
+        format: SemVerFormatSection {
+            prefix,
+            delimiter: ".".to_string(),
+            timestamp: Some("%Y-%m-%d %H:%M:%S %Z".to_string()),
+        },
+        version: SemVerVersionSection {
             major,
             minor,
             patch,
@@ -193,7 +203,7 @@ impl Version {
 
         match &config {
             Config::SemVer(semver_config) => Version {
-                prefix: semver_config.prefix.clone(),
+                prefix: semver_config.format.prefix.clone(),
                 timestamp: None,
                 version_type: VersionType::SemVer {
                     major: semver_config.version.major,
@@ -277,8 +287,8 @@ impl Version {
             }
 
             Ok(Version {
-                prefix: semver_config.prefix.clone(),
-                timestamp: get_time(&semver_config.timestamp),
+                prefix: semver_config.format.prefix.clone(),
+                timestamp: get_time(&semver_config.format.timestamp),
                 version_type: VersionType::SemVer {
                     major: semver_config.version.major,
                     minor: semver_config.version.minor,
@@ -326,9 +336,10 @@ impl Version {
 #
 # https://github.com/launchfirestorm/bump
 
-[semver]
+[semver.format]
 prefix = "v"
-timestamp = "%Y-%m-%d %H:%M:%S %Z"   # optional: strftime syntax for build timestamp
+delimiter = "."
+timestamp = "%Y-%m-%d %H:%M:%S %Z"   # [optional] strftime syntax for build timestamp
 
 # NOTE: This section is modified by the bump command
 [semver.version]
@@ -375,9 +386,9 @@ micro = false      # [optional] micro version number
 
 # NOTE: This section is modified by the bump command
 [calver.version]
-year = "2024"
-month = "02"
-day = "26"
+year = "2025"
+month = "04"
+day = "28"
 
 
 # Conflict resolution when date matches existing version:
@@ -411,30 +422,26 @@ delimiter = "-"
 
         match (&self.version_type, &self.config) {
             (VersionType::SemVer { major, minor, patch, candidate }, Config::SemVer(semver_config)) => {
-                // Update SemVer values while preserving structure and comments
-                doc["semver"]["prefix"] = value(&self.prefix);
+                // Update SemVer format section
+                doc["semver"]["format"]["prefix"] = value(&semver_config.format.prefix);
+                doc["semver"]["format"]["delimiter"] = value(&semver_config.format.delimiter);
+                if let Some(ref timestamp) = semver_config.format.timestamp {
+                    doc["semver"]["format"]["timestamp"] = value(timestamp);
+                }
+                
+                // Update SemVer version section
                 doc["semver"]["version"]["major"] = value(*major as i64);
                 doc["semver"]["version"]["minor"] = value(*minor as i64);
                 doc["semver"]["version"]["patch"] = value(*patch as i64);
                 doc["semver"]["version"]["candidate"] = value(*candidate as i64);
 
-                // Update candidate section if it exists
-                if let Some(candidate_table) = doc.get_mut("semver")
-                    .and_then(|s| s.get_mut("candidate"))
-                    .and_then(|c| c.as_table_mut())
-                {
-                    candidate_table["promotion"] = value(&semver_config.candidate.promotion);
-                    candidate_table["delimiter"] = value(&semver_config.candidate.delimiter);
-                }
+                // Update candidate section
+                doc["semver"]["candidate"]["promotion"] = value(&semver_config.candidate.promotion);
+                doc["semver"]["candidate"]["delimiter"] = value(&semver_config.candidate.delimiter);
 
-                // Update development section if it exists
-                if let Some(dev_table) = doc.get_mut("semver")
-                    .and_then(|s| s.get_mut("development"))
-                    .and_then(|d| d.as_table_mut())
-                {
-                    dev_table["promotion"] = value(&semver_config.development.promotion);
-                    dev_table["delimiter"] = value(&semver_config.development.delimiter);
-                }
+                // Update development section
+                doc["semver"]["development"]["promotion"] = value(&semver_config.development.promotion);
+                doc["semver"]["development"]["delimiter"] = value(&semver_config.development.delimiter);
             }
             (VersionType::CalVer { suffix }, Config::CalVer(calver_config)) => {
                 // Update CalVer format section
@@ -690,7 +697,7 @@ delimiter = "-"
             VersionType::SemVer { major, minor, patch, candidate } => {
                 match &self.config {
                     Config::SemVer(semver_config) => {
-                        self.timestamp = get_time(&semver_config.timestamp);
+                        self.timestamp = get_time(&semver_config.format.timestamp);
                         
                         match bump_type {
                             BumpType::Prefix(prefix) => {

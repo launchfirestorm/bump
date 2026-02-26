@@ -35,8 +35,9 @@ fn version_from_file_valid() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = "prefix_"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -74,8 +75,9 @@ fn version_from_file_invalid_major() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = "invalid"
@@ -106,8 +108,9 @@ fn version_from_file_invalid_minor() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -138,8 +141,9 @@ fn version_from_file_invalid_patch() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -170,8 +174,9 @@ fn version_from_file_invalid_candidate() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -427,8 +432,9 @@ fn version_file_with_comments() {
     let file_path = temp_dir.path().join("version.toml");
 
     let content = r#"# This is a comment
-[semver]
+[semver.format]
 prefix = ""
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -466,8 +472,9 @@ fn version_file_with_whitespace() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = ""
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -522,7 +529,7 @@ fn test_timestamp_config_none() {
 
     // When timestamp config is not set, it should be None
     match &version.config {
-        Config::SemVer(cfg) => assert!(cfg.timestamp.is_none()),
+        Config::SemVer(cfg) => assert!(cfg.format.timestamp.is_none()),
         _ => panic!("Expected SemVer config"),
     }
     assert!(version.timestamp.is_none());
@@ -540,8 +547,8 @@ fn test_timestamp_config_with_format() {
     // Config should have the format string
     match &version.config {
         Config::SemVer(cfg) => {
-            assert!(cfg.timestamp.is_some());
-            assert_eq!(cfg.timestamp.as_ref().unwrap(), "%Y-%m-%d");
+            assert!(cfg.format.timestamp.is_some());
+            assert_eq!(cfg.format.timestamp.as_ref().unwrap(), "%Y-%m-%d");
         },
         _ => panic!("Expected SemVer config"),
     }
@@ -594,8 +601,9 @@ fn test_timestamp_updates_on_bump() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"[semver]
+    let content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 timestamp = "%Y-%m-%d %H:%M:%S"
 
 [semver.version]
@@ -636,8 +644,9 @@ fn test_timestamp_in_c_header_output() {
     let config_path = _repo.path().join("bump.toml");
     let output_path = _repo.path().join("version.h");
 
-        let config_content = r#"[semver]
+        let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 timestamp = "%Y-%m-%d"
 
 [semver.version]
@@ -678,8 +687,9 @@ fn test_timestamp_not_in_c_header_when_none() {
     let config_path = _repo.path().join("bump.toml");
     let output_path = _repo.path().join("version.h");
 
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -745,7 +755,7 @@ fn test_timestamp_roundtrip() {
     match &read_version.config {
         Config::SemVer(cfg) => {
             assert_eq!(
-                cfg.timestamp,
+                cfg.format.timestamp,
                 Some("%Y-%m-%d %H:%M:%S %Z".to_string())
             );
         },
@@ -763,7 +773,7 @@ fn test_timestamp_default_version() {
 
     // Default version should have no timestamp configured
     match &version.config {
-        Config::SemVer(cfg) => assert!(cfg.timestamp.is_none()),
+        Config::SemVer(cfg) => assert!(cfg.format.timestamp.is_some()),
         _ => panic!("Expected SemVer config"),
     }
     assert!(version.timestamp.is_none());
@@ -932,7 +942,7 @@ fn version_bump_patch() {
 fn version_bump_candidate() {
     let mut config = make_default_config(1, 2, 3, 4);
     match &mut config {
-        Config::SemVer(cfg) => cfg.prefix = "prefix_".to_string(),
+        Config::SemVer(cfg) => cfg.format.prefix = "prefix_".to_string(),
         _ => panic!("Expected SemVer config"),
     }
 
@@ -1194,8 +1204,9 @@ fn version_preserves_comments_when_writing() {
 #
 # https://github.com/launchfirestorm/bump
 
-[semver]
+[semver.format]
 prefix = "v"
+delimiter = "."
 
 # NOTE: This section is modified by the bump command
 [semver.version]
@@ -1254,8 +1265,9 @@ fn test_gen_command_c_output() {
     let output_path = _repo.path().join("version.h");
 
     // Create a test bump.toml file
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1303,8 +1315,9 @@ fn test_gen_command_go_output() {
     let output_path = _repo.path().join("version.go");
 
     // Create a test bump.toml file
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 2
@@ -1351,8 +1364,9 @@ fn test_gen_command_java_output() {
     let output_path = _repo.path().join("Version.java");
 
     // Create a test bump.toml file
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "release-"
+delimiter = "."
 
 [semver.version]
 major = 3
@@ -1399,8 +1413,9 @@ fn test_gen_command_csharp_output() {
     let output_path = _repo.path().join("Version.cs");
 
     // Create a test bump.toml file
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = ""
+delimiter = "."
 
 [semver.version]
 major = 0
@@ -1446,8 +1461,9 @@ fn test_development_suffix_strategies() {
     let config_path = temp_dir.path().join("bump.toml");
 
     // Test git_sha strategy
-    let config_content_sha = r#"[semver]
+    let config_content_sha = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1467,8 +1483,9 @@ delimiter = "+"
     let version_sha = Version::from_file(&config_path).unwrap();
 
     // Test branch strategy
-    let config_content_branch = r#"[semver]
+    let config_content_branch = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1488,8 +1505,9 @@ delimiter = "+"
     let version_branch = Version::from_file(&config_path).unwrap();
 
     // Test full strategy
-    let config_content_full = r#"[semver]
+    let config_content_full = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1543,8 +1561,9 @@ fn test_candidate_promotion_strategies() {
     let config_path = temp_dir.path().join("bump.toml");
 
     // Test minor promotion strategy (default)
-    let config_content_minor = r#"[semver]
+    let config_content_minor = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1574,8 +1593,9 @@ delimiter = "+"
     }
 
     // Test major promotion strategy
-    let config_content_major = r#"[semver]
+    let config_content_major = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1605,8 +1625,9 @@ delimiter = "+"
     }
 
     // Test patch promotion strategy
-    let config_content_patch = r#"[semver]
+    let config_content_patch = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1644,8 +1665,9 @@ fn test_multiple_output_files() {
     let output_path_2 = _repo.path().join("include/version2.h");
 
         // Create a test bump.toml file
-        let config_content = r#"[semver]
+        let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1713,8 +1735,9 @@ fn test_update_cargo_toml() {
     let cargo_path = _repo.path().join("Cargo.toml");
 
         // Create a test bump.toml file
-        let config_content = r#"[semver]
+        let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 2
@@ -1781,8 +1804,9 @@ fn test_update_cargo_toml_with_dev_suffix() {
     let cargo_path = _repo.path().join("Cargo.toml");
 
         // Create a test bump.toml file
-        let config_content = r#"[semver]
+        let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1830,8 +1854,9 @@ fn test_fully_qualified_string_with_dev_suffix_when_untagged() {
     let _repo = create_temp_git_repo(false);
     let config_path = _repo.path().join("bump.toml");
     let short_sha = git_rev_parse_short_in(_repo.path());
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1863,8 +1888,9 @@ delimiter = "+"
 fn test_fully_qualified_string_without_dev_suffix_when_tagged() {
     let _repo = create_temp_git_repo(true);
     let config_path = _repo.path().join("bump.toml");
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1898,8 +1924,9 @@ fn test_update_cargo_toml_missing_package_section() {
     let cargo_path = _repo.path().join("Cargo.toml");
 
     // Create a test bump.toml file
-    let config_content = r#"[semver]
+    let config_content = r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = 1
@@ -1966,8 +1993,8 @@ fn test_init_semver_creates_proper_structure() {
     // Check for header
     assert!(content.contains("https://github.com/launchfirestorm/bump"));
 
-    // Check for [semver] section
-    assert!(content.contains("[semver]"));
+    // Check for [semver.format] section
+    assert!(content.contains("[semver.format]"));
     assert!(content.contains("prefix = \"v\""));
 
     // Check version values

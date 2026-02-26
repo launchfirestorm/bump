@@ -14,8 +14,9 @@ pub use crate::bump::{
 
 // Import types from version module
 pub use crate::version::{
-    CandidateSection, Config, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
-    SemVerConfig, CalVerConfig, CalVerConflictSection, CalVerFormatSection, CalVerVersionSection, VersionType,
+    CandidateSection, Config, Config as BumpConfig, DevelopmentSection, Version,
+    SemVerConfig, SemVerFormatSection, SemVerVersionSection,
+    CalVerConfig, CalVerConflictSection, CalVerFormatSection, CalVerVersionSection, VersionType,
 };
 
 // RAII wrapper for test directories that automatically sets thread-local repo path
@@ -134,8 +135,9 @@ pub fn write_bump_toml(path: &Path, content: &str) {
 
 pub fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
     let (major, minor, patch, candidate) = version;
-    let content = format!(r#"[semver]
+    let content = format!(r#"[semver.format]
 prefix = "v"
+delimiter = "."
 
 [semver.version]
 major = {}
@@ -156,8 +158,9 @@ delimiter = "+"
 
 pub fn write_test_config_with_timestamp(path: &Path, version: (u32, u32, u32, u32), timestamp_format: &str) {
     let (major, minor, patch, candidate) = version;
-    let content = format!(r#"[semver]
+    let content = format!(r#"[semver.format]
 prefix = "v"
+delimiter = "."
 timestamp = "{}"
 
 [semver.version]
@@ -179,9 +182,12 @@ delimiter = "+"
 
 pub fn make_default_config(major: u32, minor: u32, patch: u32, candidate: u32) -> BumpConfig {
     BumpConfig::SemVer(SemVerConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
+        format: SemVerFormatSection {
+            prefix: "v".to_string(),
+            delimiter: ".".to_string(),
+            timestamp: None,
+        },
+        version: SemVerVersionSection {
             major,
             minor,
             patch,
