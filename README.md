@@ -1,3 +1,9 @@
+```
+ ____  __  __  __  __  ____ 
+(  _ \(  )(  )(  \/  )(  _ \
+ ) _ < )(__)(  )    (  )___/
+(____/(______)(_/\/\_)(__)  
+```
 # `bump` automatic versioning
 
 > An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration, multi-language code generation, and git-aware version detection. No assumption is made, you `bump` when you want, how you want.
