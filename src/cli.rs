@@ -10,7 +10,7 @@ pub fn cli() -> Command {
                 .value_parser(clap::value_parser!(String))
                 .default_value("bump.toml")
                 .global(true)
-                .help("Path to the bumpfile to read version from")
+                .help("Path to the configuration file (default: bump.toml)")
         )
         .subcommand(
             Command::new("init")
@@ -20,8 +20,7 @@ pub fn cli() -> Command {
                         .long("prefix")
                         .value_name("PREFIX")
                         .value_parser(clap::value_parser!(String))
-                        .default_value("v")
-                        .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
+                        .help("Prefix for version tags (defaults: 'v' for SemVer, '' for CalVer)")
                 )
                 .arg(
                     Arg::new("calver")

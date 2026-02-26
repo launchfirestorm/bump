@@ -219,7 +219,7 @@ delimiter = "-"
 }
 
 #[allow(dead_code)]
-pub fn make_calver_config(suffix: u32) -> BumpConfig {
+pub fn make_calver_config(revision: u32) -> BumpConfig {
     let now = chrono::Utc::now();
     BumpConfig::CalVer(CalVerConfig {
         format: CalVerFormatSection {
@@ -228,19 +228,14 @@ pub fn make_calver_config(suffix: u32) -> BumpConfig {
             year: "%Y".to_string(),
             month: Some("%m".to_string()),
             day: Some("%d".to_string()),
-            minor: Some(false),
-            micro: Some(false),
         },
         version: CalVerVersionSection {
             year: now.format("%Y").to_string(),
             month: Some(now.format("%m").to_string()),
             day: Some(now.format("%d").to_string()),
-            minor: None,
-            micro: None,
         },
         conflict: CalVerConflictSection {
-            resolution: "suffix".to_string(),
-            suffix,
+            revision,
             delimiter: "-".to_string(),
         },
     })

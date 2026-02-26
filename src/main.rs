@@ -23,8 +23,12 @@ fn main() -> ExitCode {
     match matches.subcommand() {
         Some(("init", sub_matches)) => {
             let bumpfile = sub_matches.get_one::<String>("bumpfile").unwrap();
-            let prefix = sub_matches.get_one::<String>("prefix").unwrap();
             let use_calver = sub_matches.get_flag("calver");
+            // Set default prefix based on version type: "v" for SemVer, "" for CalVer
+            let prefix = sub_matches
+                .get_one::<String>("prefix")
+                .map(|s| s.as_str())
+                .unwrap_or(if use_calver { "" } else { "v" });
             egress(bump::initialize(bumpfile, prefix, use_calver))
         }
         Some(("gen", sub_matches)) => {

@@ -9,11 +9,6 @@
 # 
 # Usage: 
 #   curl -sSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh | bash
-#   
-# Or download and run:
-#   wget https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh
-#   chmod +x install.sh
-#   ./install.sh
 #
 set -eu
 
@@ -223,8 +218,7 @@ verify_installation() {
   for binary_path in "${binary_paths[@]}"; do
     if command -v "$binary_path" >/dev/null 2>&1; then
       version=$("$binary_path" --version 2>/dev/null) || version="unknown"
-      success "Installation complete! Version: $version"
-      success "Binary location: $(command -v "$binary_path")"
+      success "Installation complete! Version: $version ($(command -v "$binary_path"))"
       found=true
       break
     fi

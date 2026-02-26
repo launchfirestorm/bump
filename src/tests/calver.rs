@@ -11,7 +11,7 @@ fn test_init_calver_creates_proper_structure() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        version_type: VersionType::CalVer { suffix: 0 },
+        version_type: VersionType::CalVer { revision: 0 },
         path: config_path.clone(),
         config: crate::version::default_calver_config("v".to_string()),
     };
@@ -40,16 +40,14 @@ fn test_init_calver_creates_proper_structure() {
 
     // Check for conflict section with comments
     assert!(content.contains("[calver.conflict]"));
-    assert!(content.contains("resolution = \"suffix\""));
-    assert!(content.contains("suffix = 0"));
+    assert!(content.contains("revision = 0"));
     assert!(content.contains("delimiter = \"-\""));
-    assert!(content.contains("Conflict resolution"));
 
     // Verify it can be read back
     let read_version = Version::from_file(&config_path).unwrap();
     match &read_version.version_type {
-        VersionType::CalVer { suffix } => {
-            assert_eq!(*suffix, 0);
+        VersionType::CalVer { revision } => {
+            assert_eq!(*revision, 0);
         },
         _ => panic!("Expected CalVer version type"),
     }
@@ -75,8 +73,7 @@ month = "01"
 day = "15"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#;
     fs::write(&config_path, content).unwrap();
@@ -94,9 +91,9 @@ delimiter = "-"
         assert_eq!(config.version.month, Some(now.format("%m").to_string()));
         assert_eq!(config.version.day, Some(now.format("%d").to_string()));
         
-        // Suffix should be reset to 0 for new date
-        if let VersionType::CalVer { suffix } = updated_version.version_type {
-            assert_eq!(suffix, 0);
+        // Revision should be reset to 0 for new date
+        if let VersionType::CalVer { revision } = updated_version.version_type {
+            assert_eq!(revision, 0);
         }
     } else {
         panic!("Expected CalVer config");
@@ -104,7 +101,7 @@ delimiter = "-"
 }
 
 #[test]
-fn test_same_day_bump_increments_suffix() {
+fn test_same_day_bump_increments_revision() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("bump.toml");
 
@@ -123,20 +120,19 @@ month = "{}"
 day = "{}"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#, now.format("%Y"), now.format("%m"), now.format("%d"));
     fs::write(&config_path, content).unwrap();
 
-    // First bump - should increment suffix since date matches
+    // First bump - should increment revision since date matches
     let mut version = Version::from_file(&config_path).unwrap();
     version.bump(&BumpType::Calendar).unwrap();
     version.to_file().unwrap();
 
     let updated = Version::from_file(&config_path).unwrap();
-    if let VersionType::CalVer { suffix } = updated.version_type {
-        assert_eq!(suffix, 1);
+    if let VersionType::CalVer { revision } = updated.version_type {
+        assert_eq!(revision, 1);
     } else {
         panic!("Expected CalVer version type");
     }
@@ -147,19 +143,19 @@ delimiter = "-"
     version.to_file().unwrap();
 
     let updated = Version::from_file(&config_path).unwrap();
-    if let VersionType::CalVer { suffix } = updated.version_type {
-        assert_eq!(suffix, 2);
+    if let VersionType::CalVer { revision } = updated.version_type {
+        assert_eq!(revision, 2);
     } else {
         panic!("Expected CalVer version type");
     }
 }
 
 #[test]
-fn test_different_day_resets_suffix() {
+fn test_different_day_resets_revision() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("bump.toml");
 
-    // Create CalVer file with yesterday's date and suffix
+    // Create CalVer file with yesterday's date and revision
     let now = chrono::Utc::now();
     let yesterday = now - chrono::Duration::days(1);
     let content = format!(r#"[calver.format]
@@ -175,13 +171,12 @@ month = "{}"
 day = "{}"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 5
+revision = 5
 delimiter = "-"
 "#, yesterday.format("%Y"), yesterday.format("%m"), yesterday.format("%d"));
     fs::write(&config_path, content).unwrap();
 
-    // Bump - should reset suffix to 0 for new date
+    // Bump - should reset revision to 0 for new date
     let mut version = Version::from_file(&config_path).unwrap();
     version.bump(&BumpType::Calendar).unwrap();
     version.to_file().unwrap();
@@ -192,52 +187,11 @@ delimiter = "-"
         assert_eq!(config.version.month, Some(now.format("%m").to_string()));
         assert_eq!(config.version.day, Some(now.format("%d").to_string()));
         
-        if let VersionType::CalVer { suffix } = updated.version_type {
-            assert_eq!(suffix, 0, "Suffix should reset to 0 for new date");
+        if let VersionType::CalVer { revision } = updated.version_type {
+            assert_eq!(revision, 0, "Revision should reset to 0 for new date");
         }
     } else {
         panic!("Expected CalVer config");
-    }
-}
-
-#[test]
-fn test_overwrite_resolution_keeps_suffix_zero() {
-    let temp_dir = TempDir::new().unwrap();
-    let config_path = temp_dir.path().join("bump.toml");
-
-    // Create CalVer file with current date and overwrite resolution
-    let now = chrono::Utc::now();
-    let content = format!(r#"[calver.format]
-prefix = ""
-delimiter = "."
-year = "%Y"
-month = "%m"
-day = "%d"
-
-[calver.version]
-year = "{}"
-month = "{}"
-day = "{}"
-
-[calver.conflict]
-resolution = "overwrite"
-suffix = 0
-delimiter = "-"
-"#, now.format("%Y"), now.format("%m"), now.format("%d"));
-    fs::write(&config_path, content).unwrap();
-
-    // Bump multiple times - suffix should stay at 0
-    for _ in 0..3 {
-        let mut version = Version::from_file(&config_path).unwrap();
-        version.bump(&BumpType::Calendar).unwrap();
-        version.to_file().unwrap();
-
-        let updated = Version::from_file(&config_path).unwrap();
-        if let VersionType::CalVer { suffix } = updated.version_type {
-            assert_eq!(suffix, 0, "Overwrite resolution should keep suffix at 0");
-        } else {
-            panic!("Expected CalVer version type");
-        }
     }
 }
 
@@ -256,8 +210,7 @@ year = "%Y"
 year = "2024"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#;
     fs::write(&config_path, content).unwrap();
@@ -300,8 +253,7 @@ year = "2024"
 month = "01"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#;
     fs::write(&config_path, content).unwrap();
@@ -328,7 +280,7 @@ delimiter = "-"
 }
 
 #[test]
-fn test_calendar_with_suffix_in_version_string() {
+fn test_calendar_with_revision_in_version_string() {
     let temp_dir = TempDir::new().unwrap();
     let config_path = temp_dir.path().join("bump.toml");
 
@@ -347,13 +299,12 @@ month = "{}"
 day = "{}"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#, now.format("%Y"), now.format("%m"), now.format("%d"));
     fs::write(&config_path, content).unwrap();
 
-    // First bump - suffix 1
+    // First bump - revision 1
     let mut version = Version::from_file(&config_path).unwrap();
     version.bump(&BumpType::Calendar).unwrap();
     version.to_file().unwrap();
@@ -378,8 +329,7 @@ year = "%Y"
 year = "2024"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#;
     fs::write(&config_path, content).unwrap();
@@ -419,8 +369,7 @@ year = "%Y"
 year = "2024"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "-"
 "#;
     fs::write(&config_path, content).unwrap();
@@ -455,8 +404,7 @@ month = "01"
 day = "01"
 
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
+revision = 0
 delimiter = "."
 "#;
     fs::write(&config_path, content).unwrap();
@@ -473,3 +421,84 @@ delimiter = "."
     assert_eq!(version_str, format!("release_{}", now.format("%Y-%m-%d")));
 }
 
+#[test]
+fn test_format_section_preservation() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    let now = chrono::Utc::now();
+    let content = format!(r#"[calver.format]
+prefix = "v"
+delimiter = "."
+year = "%Y"
+month = "%m"
+day = "%d"
+
+[calver.version]
+year = "{}"
+month = "{}"
+day = "{}"
+
+[calver.conflict]
+revision = 0
+delimiter = "-"
+"#, now.format("%Y"), now.format("%m"), now.format("%d"));
+    fs::write(&config_path, content).unwrap();
+
+    // Bump the version
+    let mut version = Version::from_file(&config_path).unwrap();
+    version.bump(&BumpType::Calendar).unwrap();
+    version.to_file().unwrap();
+
+    // Read the file and verify format section is preserved
+    let updated_content = fs::read_to_string(&config_path).unwrap();
+    assert!(updated_content.contains("prefix = \"v\""));
+    assert!(updated_content.contains("delimiter = \".\""));
+    
+    // Verify config values
+    let updated = Version::from_file(&config_path).unwrap();
+    if let Config::CalVer(config) = &updated.config {
+        assert_eq!(config.format.prefix, "v");
+        assert_eq!(config.format.delimiter, ".");
+    } else {
+        panic!("Expected CalVer config");
+    }
+}
+
+#[test]
+fn test_format_section_inline_comments_preserved() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    let now = chrono::Utc::now();
+    let content = format!(r#"[calver.format]
+prefix = "v"
+delimiter = "."
+year = "%Y"        # strftime 4 digit year
+month = "%m"       # [optional] strftime zero padded month
+day = "%d"         # [optional] strftime zero padded day
+
+[calver.version]
+year = "{}"
+month = "{}"
+day = "{}"
+
+[calver.conflict]
+revision = 0       # increments on same day bumps
+delimiter = "-"
+"#, now.format("%Y"), now.format("%m"), now.format("%d"));
+    fs::write(&config_path, content).unwrap();
+
+    // Bump the version multiple times
+    for _ in 0..3 {
+        let mut version = Version::from_file(&config_path).unwrap();
+        version.bump(&BumpType::Calendar).unwrap();
+        version.to_file().unwrap();
+    }
+
+    // Read the file and verify inline comments are preserved
+    let updated_content = fs::read_to_string(&config_path).unwrap();
+    assert!(updated_content.contains("# strftime 4 digit year"));
+    assert!(updated_content.contains("# [optional] strftime zero padded month"));
+    assert!(updated_content.contains("# [optional] strftime zero padded day"));
+}

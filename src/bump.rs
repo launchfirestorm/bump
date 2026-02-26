@@ -1,5 +1,5 @@
 use crate::lang::{self, Language};
-use crate::version::{default_semver_config, Version, VersionType, Config};
+use crate::version::{Version, VersionType, Config};
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
@@ -99,43 +99,6 @@ pub fn ensure_directory_exists(path: &Path) -> Result<(), BumpError> {
     Ok(())
 }
 
-pub fn prompt_for_version(path: &Path) -> Result<Version, BumpError> {
-    let mut version_input = String::new();
-    println!("Enter the version number (e.g. 1.2.3) or press enter for default (0.1.0): ");
-
-    io::stdin()
-        .read_line(&mut version_input)
-        .map_err(BumpError::IoError)?;
-    let version_input = version_input.trim();
-
-    if version_input.is_empty() {
-        Ok(Version::default(path))
-    } else {
-        let version_parts: Result<Vec<u32>, _> =
-            version_input.split('.').map(|s| s.parse::<u32>()).collect();
-
-        match version_parts {
-            Ok(parts) if parts.len() == 3 => {
-                let config = default_semver_config("v".to_string(), parts[0], parts[1], parts[2], 0);
-
-                Ok(Version {
-                    prefix: "v".to_string(),
-                    timestamp: None,
-                    version_type: VersionType::SemVer {
-                        major: parts[0],
-                        minor: parts[1],
-                        patch: parts[2],
-                        candidate: 0,
-                    },
-                    path: path.to_path_buf(),
-                    config,
-                })
-            }
-            _ => Err(BumpError::ParseError("invalid version format".to_string())),
-        }
-    }
-}
-
 pub fn get_version(matches: &ArgMatches) -> Result<Version, BumpError> {
     let version_file_path = matches
         .get_one::<String>("bumpfile")
@@ -177,39 +140,28 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
         let version = Version {
             prefix: prefix.to_string(),
             timestamp: None,
-            version_type: VersionType::CalVer { suffix: 0 },
+            version_type: VersionType::CalVer { revision: 0 },
             path: filepath.clone(),
             config: crate::version::default_calver_config(prefix.to_string()),
         };
         version.file_init()?;
         println!("Initialized new CalVer version file at '{}'", filepath.display());
     } else {
-        // SemVer - prompt for tag or manual
-        let mut use_git_tag = String::new();
-        println!("Use git tag for versioning? (y/n): ");
-        io::stdin()
-            .read_line(&mut use_git_tag)
-            .map_err(BumpError::IoError)?;
-        let use_git_tag = use_git_tag.trim().to_lowercase();
-
-        if use_git_tag == "y" {
-            match get_git_tag(true) {
-                Ok(git_tag) => {
-                    println!("Found git tag: {git_tag}");
-                    let mut git_version = Version::from_string(&git_tag, &filepath)?;
-                    git_version.prefix = prefix.to_string(); // Override prefix from CLI
-                    git_version.file_init()?;
-                }
-                Err(err) => {
-                    return Err(err);
-                }
+        // SemVer - try git tag detection silently, fallback to 0.1.0
+        let version = match get_git_tag(true) {
+            Ok(git_tag) => {
+                println!("Found git tag: {git_tag}");
+                let mut git_version = Version::from_string(&git_tag, &filepath)?;
+                git_version.prefix = prefix.to_string(); // Override prefix from CLI
+                git_version
             }
-        } else {
-            let mut version = prompt_for_version(&filepath)?;
-            version.prefix = prefix.to_string(); // Override prefix from CLI
-            version.file_init()?;
-        }
-
+            Err(_) => {
+                // No git tag found, default to 0.1.0
+                Version::default(&filepath)
+            }
+        };
+        
+        version.file_init()?;
         println!("Initialized new SemVer version file at '{}'", filepath.display());
     }
 
@@ -443,7 +395,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
                 _ => unreachable!("SemVer version type must have SemVer config"),
             }
         }
-        VersionType::CalVer { suffix } => {
+        VersionType::CalVer { revision } => {
             match &version.config {
                 Config::CalVer(calver_config) => {
                     // Build version from stored components
@@ -455,17 +407,12 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
                     if let Some(ref day) = calver_config.version.day {
                         parts.push(day.clone());
                     }
-                    if let Some(minor) = calver_config.version.minor {
-                        parts.push(minor.to_string());
-                    }
-                    if let Some(micro) = calver_config.version.micro {
-                        parts.push(micro.to_string());
-                    }
                     
                     let version_str = parts.join(&calver_config.format.delimiter);
                     
-                    if *suffix > 0 {
-                        format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, suffix)
+                    // Only show revision if > 0
+                    if *revision > 0 {
+                        format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, revision)
                     } else {
                         format!("{}{}", calver_config.format.prefix, version_str)
                     }

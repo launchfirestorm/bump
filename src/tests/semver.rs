@@ -210,8 +210,11 @@ fn version_from_file_missing_file() {
     let result = Version::from_file(&file_path);
     assert!(result.is_err());
     match result.unwrap_err() {
-        BumpError::IoError(_) => (), // Expected
-        _ => panic!("Expected IoError"),
+        BumpError::LogicError(msg) => {
+            assert!(msg.contains("Configuration file not found"));
+            assert!(msg.contains("bump init"));
+        }
+        _ => panic!("Expected LogicError"),
     }
 }
 
@@ -2000,7 +2003,7 @@ fn test_init_semver_creates_proper_structure() {
     // Check version values
     assert!(content.contains("[semver.version]"));
     assert!(content.contains("major = 0"));
-    assert!(content.contains("minor = 0"));
+    assert!(content.contains("minor = 1"));
     assert!(content.contains("patch = 0"));
     assert!(content.contains("candidate = 0"));
 
@@ -2024,7 +2027,7 @@ fn test_init_semver_creates_proper_structure() {
     match &read_version.version_type {
         VersionType::SemVer { major, minor, patch, candidate } => {
             assert_eq!(*major, 0);
-            assert_eq!(*minor, 0);
+            assert_eq!(*minor, 1);
             assert_eq!(*patch, 0);
             assert_eq!(*candidate, 0);
         },

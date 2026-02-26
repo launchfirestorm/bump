@@ -53,8 +53,7 @@ pub struct SemVerConfig {
 // CalVer Structures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalVerConflictSection {
-    pub resolution: String, // "suffix" or "overwrite"
-    pub suffix: u32,
+    pub revision: u32,
     pub delimiter: String, // "-"
 }
 
@@ -67,10 +66,6 @@ pub struct CalVerFormatSection {
     pub month: Option<String>, // e.g., "%m"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub day: Option<String>,   // e.g., "%d"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub minor: Option<bool>,   // include minor component
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub micro: Option<bool>,   // include micro component
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,10 +75,6 @@ pub struct CalVerVersionSection {
     pub month: Option<String>,  // e.g., "02"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub day: Option<String>,    // e.g., "25"
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub minor: Option<u32>,     // numeric if format.minor is true
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub micro: Option<u32>,     // numeric if format.micro is true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,19 +142,14 @@ pub(crate) fn default_calver_config(prefix: String) -> Config {
             year: "%Y".to_string(),
             month: Some("%m".to_string()),
             day: Some("%d".to_string()),
-            minor: Some(false),
-            micro: Some(false),
         },
         version: CalVerVersionSection {
             year: now.format("%Y").to_string(),
             month: Some(now.format("%m").to_string()),
             day: Some(now.format("%d").to_string()),
-            minor: None,
-            micro: None,
         },
         conflict: CalVerConflictSection {
-            resolution: "suffix".to_string(),
-            suffix: 0,
+            revision: 0,
             delimiter: "-".to_string(),
         },
     })
@@ -179,7 +165,7 @@ pub enum VersionType {
         candidate: u32,
     },
     CalVer {
-        suffix: u32,
+        revision: u32,
     },
 }
 
@@ -229,9 +215,9 @@ impl Version {
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
         let content = fs::read_to_string(path).map_err(|err| {
             if err.kind() == io::ErrorKind::NotFound {
-                BumpError::IoError(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("{}", path.display()),
+                BumpError::LogicError(format!(
+                    "Configuration file not found at '{}'. Create one with 'bump init' or 'bump init --calver'",
+                    path.display()
                 ))
             } else {
                 BumpError::IoError(err)
@@ -303,23 +289,11 @@ impl Version {
             let calver_toml: CalVerToml = toml::from_str(&content)?;
             let calver_config = calver_toml.calver;
 
-            // Validate conflict resolution strategy
-            match calver_config.conflict.resolution.as_str() {
-                "suffix" | "overwrite" => (),
-                _ => {
-                    println!(
-                        "invalid conflict resolution strategy: {}",
-                        calver_config.conflict.resolution
-                    );
-                    println!("defaulting to suffix");
-                }
-            }
-
             Ok(Version {
                 prefix: calver_config.format.prefix.clone(),
                 timestamp: None, // CalVer doesn't use separate timestamp
                 version_type: VersionType::CalVer {
-                    suffix: calver_config.conflict.suffix,
+                    revision: calver_config.conflict.revision,
                 },
                 path: path.to_path_buf(),
                 config: Config::CalVer(calver_config),
@@ -329,7 +303,9 @@ impl Version {
 
     pub fn file_init(&self) -> Result<(), BumpError> {
         let contents = match &self.config {
-                Config::SemVer(_) => r#"#  ____  __  __  __  __  ____ 
+            Config::SemVer(semver_config) => {
+                format!(
+                    r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
 #  ) _ < )(__)(  )    (  )___/
 # (____/(______)(_/\/\_)(__)  
@@ -337,35 +313,49 @@ impl Version {
 # https://github.com/launchfirestorm/bump
 
 [semver.format]
-prefix = "v"
-delimiter = "."
-timestamp = "%Y-%m-%d %H:%M:%S %Z"   # [optional] strftime syntax for build timestamp
+prefix = "{}"
+delimiter = "{}"
+timestamp = "{}"   # [optional] strftime syntax for build timestamp
 
 # NOTE: This section is modified by the bump command
 [semver.version]
-major = 0
-minor = 0
-patch = 0
-candidate = 0
+major = {}
+minor = {}
+patch = {}
+candidate = {}
 
 # Candidate promotion strategies:  (when creating first candidate)
 #  - "major" : increment major, zero minor and patch
 #  - "minor" : increment minor, zero patch
 #  - "patch" : increment patch
 [semver.candidate]
-promotion = "minor"
-delimiter = "-rc"
+promotion = "{}"
+delimiter = "{}"
 
 # Development suffix strategies:
 #  - "git_sha" : append 7 char sha1 of the current commit (default)
 #  - "branch"  : append the current git branch name
 #  - "full"    : append <branch>_<sha1>
 [semver.development]
-promotion = "git_sha"
-delimiter = "+"
-"#
-                    .to_string(),
-                Config::CalVer(_) => r#"#  ____  __  __  __  __  ____ 
+promotion = "{}"
+delimiter = "{}"
+"#,
+                    semver_config.format.prefix,
+                    semver_config.format.delimiter,
+                    semver_config.format.timestamp.as_deref().unwrap_or("%Y-%m-%d %H:%M:%S %Z"),
+                    semver_config.version.major,
+                    semver_config.version.minor,
+                    semver_config.version.patch,
+                    semver_config.version.candidate,
+                    semver_config.candidate.promotion,
+                    semver_config.candidate.delimiter,
+                    semver_config.development.promotion,
+                    semver_config.development.delimiter,
+                )
+            }
+            Config::CalVer(calver_config) => {
+                format!(
+                    r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
 #  ) _ < )(__)(  )    (  )___/
 # (____/(______)(_/\/\_)(__)  
@@ -374,35 +364,38 @@ delimiter = "+"
 
 # format will drive version section below
 # - remove optional fields to change format
-# - for minor|micro, setting to false is the same as removing
 [calver.format]
 prefix = ""
-delimiter = "."
-year = "%Y"        # strftime 4 digit year
-month = "%m"       # [optional] strftime zero padded month
-day = "%d"         # [optional] strftime zero padded day
-minor = false      # [optional] minor version number
-micro = false      # [optional] micro version number
+delimiter = "{}"
+year = "{}"        # strftime 4 digit year
+month = "{}"       # [optional] strftime zero padded month
+day = "{}"         # [optional] strftime zero padded day
 
 # NOTE: This section is modified by the bump command
 [calver.version]
-year = "2025"
-month = "04"
-day = "28"
+year = "{}"
+month = "{}"
+day = "{}"
 
 
-# Conflict resolution when date matches existing version:
-#  - "suffix"    : append numeric suffix (e.g., 2024.02.25-1)
-#  - "overwrite" : reuse the same version
-# NOTE: suffix is modified by the bump command
+# Same-date revision counter (only shown in version string if > 0)
+# NOTE: revision is modified by the bump command
 [calver.conflict]
-resolution = "suffix"
-suffix = 0
-delimiter = "-"
-"#
-                    .to_string(),
-
-    };
+revision = {}
+delimiter = "{}"
+"#,
+                    calver_config.format.delimiter,
+                    calver_config.format.year,
+                    calver_config.format.month.as_deref().unwrap_or("%m"),
+                    calver_config.format.day.as_deref().unwrap_or("%d"),
+                    calver_config.version.year,
+                    calver_config.version.month.as_deref().unwrap_or("01"),
+                    calver_config.version.day.as_deref().unwrap_or("01"),
+                    calver_config.conflict.revision,
+                    calver_config.conflict.delimiter,
+                )
+            }
+        };
         fs::write(&self.path, contents).map_err(BumpError::IoError)
     }
 
@@ -443,44 +436,32 @@ delimiter = "-"
                 doc["semver"]["development"]["promotion"] = value(&semver_config.development.promotion);
                 doc["semver"]["development"]["delimiter"] = value(&semver_config.development.delimiter);
             }
-            (VersionType::CalVer { suffix }, Config::CalVer(calver_config)) => {
-                // Update CalVer format section
-                doc["calver"]["format"]["prefix"] = value(&calver_config.format.prefix);
-                doc["calver"]["format"]["delimiter"] = value(&calver_config.format.delimiter);
-                doc["calver"]["format"]["year"] = value(&calver_config.format.year);
-                
-                if let Some(ref month) = calver_config.format.month {
-                    doc["calver"]["format"]["month"] = value(month);
-                }
-                if let Some(ref day) = calver_config.format.day {
-                    doc["calver"]["format"]["day"] = value(day);
-                }
-                if let Some(minor) = calver_config.format.minor {
-                    doc["calver"]["format"]["minor"] = value(minor);
-                }
-                if let Some(micro) = calver_config.format.micro {
-                    doc["calver"]["format"]["micro"] = value(micro);
-                }
+            (VersionType::CalVer { revision }, Config::CalVer(calver_config)) => {
+                // NOTE: We don't touch the format section - it's static configuration
+                // Only the version section and revision are modified during bumps
                 
                 // Update CalVer version section
                 doc["calver"]["version"]["year"] = value(&calver_config.version.year);
                 
                 if let Some(ref month) = calver_config.version.month {
                     doc["calver"]["version"]["month"] = value(month);
+                } else {
+                    // Remove field if not present in config
+                    if let Some(table) = doc["calver"]["version"].as_table_mut() {
+                        table.remove("month");
+                    }
                 }
                 if let Some(ref day) = calver_config.version.day {
                     doc["calver"]["version"]["day"] = value(day);
-                }
-                if let Some(minor) = calver_config.version.minor {
-                    doc["calver"]["version"]["minor"] = value(minor as i64);
-                }
-                if let Some(micro) = calver_config.version.micro {
-                    doc["calver"]["version"]["micro"] = value(micro as i64);
+                } else {
+                    // Remove field if not present in config
+                    if let Some(table) = doc["calver"]["version"].as_table_mut() {
+                        table.remove("day");
+                    }
                 }
                 
                 // Update CalVer conflict section
-                doc["calver"]["conflict"]["suffix"] = value(*suffix as i64);
-                doc["calver"]["conflict"]["resolution"] = value(&calver_config.conflict.resolution);
+                doc["calver"]["conflict"]["revision"] = value(*revision as i64);
                 doc["calver"]["conflict"]["delimiter"] = value(&calver_config.conflict.delimiter);
             }
             _ => unreachable!("Version type and config mismatch"),
@@ -522,7 +503,7 @@ delimiter = "-"
                     _ => unreachable!("SemVer version type must have SemVer config"),
                 }
             }
-            VersionType::CalVer { suffix } => {
+            VersionType::CalVer { revision } => {
                 match &self.config {
                     Config::CalVer(calver_config) => {
                         // Build version from stored components
@@ -534,17 +515,12 @@ delimiter = "-"
                         if let Some(ref day) = calver_config.version.day {
                             parts.push(day.clone());
                         }
-                        if let Some(minor) = calver_config.version.minor {
-                            parts.push(minor.to_string());
-                        }
-                        if let Some(micro) = calver_config.version.micro {
-                            parts.push(micro.to_string());
-                        }
                         
                         let version_str = parts.join(&calver_config.format.delimiter);
                         
-                        if *suffix > 0 {
-                            format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, suffix)
+                        // Only show revision if > 0
+                        if *revision > 0 {
+                            format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, revision)
                         } else {
                             format!("{}{}", calver_config.format.prefix, version_str)
                         }
@@ -617,7 +593,7 @@ delimiter = "-"
                     _ => unreachable!("SemVer version type must have SemVer config"),
                 }
             }
-            VersionType::CalVer { suffix } => {
+            VersionType::CalVer { revision } => {
                 match &self.config {
                     Config::CalVer(calver_config) => {
                         // Build version from stored components
@@ -629,17 +605,12 @@ delimiter = "-"
                         if let Some(ref day) = calver_config.version.day {
                             parts.push(day.clone());
                         }
-                        if let Some(minor) = calver_config.version.minor {
-                            parts.push(minor.to_string());
-                        }
-                        if let Some(micro) = calver_config.version.micro {
-                            parts.push(micro.to_string());
-                        }
                         
                         let version_str = parts.join(&calver_config.format.delimiter);
                         
-                        if *suffix > 0 {
-                            Ok(format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, suffix))
+                        // Only show revision if > 0
+                        if *revision > 0 {
+                            Ok(format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, revision))
                         } else {
                             Ok(format!("{}{}", calver_config.format.prefix, version_str))
                         }
@@ -766,7 +737,7 @@ delimiter = "-"
                     _ => unreachable!("SemVer version type must have SemVer config"),
                 }
             }
-            VersionType::CalVer { suffix } => {
+            VersionType::CalVer { revision } => {
                 match &mut self.config {
                     Config::CalVer(calver_config) => {
                         match bump_type {
@@ -779,54 +750,20 @@ delimiter = "-"
                                 let new_day = calver_config.format.day.as_ref()
                                     .map(|fmt| now.format(fmt).to_string());
                                 
-                                // Compare with stored version to check for conflict
+                                // Compare with stored version to check for same date
                                 let is_same_date = new_year == calver_config.version.year
                                     && new_month == calver_config.version.month
                                     && new_day == calver_config.version.day;
                                 
                                 if is_same_date {
-                                    // Same date - handle conflict resolution
-                                    match calver_config.conflict.resolution.as_str() {
-                                        "suffix" => {
-                                            // Increment the suffix
-                                            *suffix += 1;
-                                        }
-                                        "overwrite" => {
-                                            // Keep suffix at current value (usually 0)
-                                            // Don't increment
-                                        }
-                                        _ => {
-                                            // Default to suffix
-                                            *suffix += 1;
-                                        }
-                                    }
+                                    // Same date - increment revision
+                                    *revision += 1;
                                 } else {
-                                    // Different date - reset suffix
-                                    *suffix = 0;
-                                    
-                                    // Update version section with new date
+                                    // Different date - update date and reset revision
+                                    *revision = 0;
                                     calver_config.version.year = new_year;
                                     calver_config.version.month = new_month;
                                     calver_config.version.day = new_day;
-                                    
-                                    // Handle minor/micro if enabled in format
-                                    if let Some(true) = calver_config.format.minor {
-                                        // Increment or initialize minor
-                                        calver_config.version.minor = Some(
-                                            calver_config.version.minor.map_or(0, |v| v + 1)
-                                        );
-                                    } else {
-                                        calver_config.version.minor = None;
-                                    }
-                                    
-                                    if let Some(true) = calver_config.format.micro {
-                                        // Increment or initialize micro
-                                        calver_config.version.micro = Some(
-                                            calver_config.version.micro.map_or(0, |v| v + 1)
-                                        );
-                                    } else {
-                                        calver_config.version.micro = None;
-                                    }
                                 }
                             }
                             _ => {
