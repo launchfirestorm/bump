@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 pub fn cli() -> Command {
     Command::new("bump")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Semantic Version bumping with sane defaults")
+        .about("Automatic version bumping with sane defaults")
         .arg(
             Arg::new("bumpfile")
                 .short('f')
@@ -24,6 +24,12 @@ pub fn cli() -> Command {
                         .value_parser(clap::value_parser!(String))
                         .default_value("v")
                         .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
+                )
+                .arg(
+                    Arg::new("calver")
+                        .long("calver")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Initialize with Calendar Versioning instead of Semantic Versioning")
                 )
         )
         .subcommand(
@@ -62,7 +68,7 @@ pub fn cli() -> Command {
         )
         .subcommand(
             Command::new("update")
-                .about("Update PATH to bump version")
+                .about("bump can update version in known file types (i.e: Cargo.toml)")
                 .arg(
                     Arg::new("path")
                         .value_name("PATH")

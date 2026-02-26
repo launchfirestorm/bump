@@ -24,7 +24,8 @@ fn main() -> ExitCode {
         Some(("init", sub_matches)) => {
             let bumpfile = sub_matches.get_one::<String>("bumpfile").unwrap();
             let prefix = sub_matches.get_one::<String>("prefix").unwrap();
-            egress(bump::initialize(bumpfile, prefix))
+            let use_calver = sub_matches.get_flag("calver");
+            egress(bump::initialize(bumpfile, prefix, use_calver))
         }
         Some(("gen", sub_matches)) => {
             let lang_str = sub_matches
