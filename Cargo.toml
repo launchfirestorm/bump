@@ -1,6 +1,6 @@
 [package]
 name = "bump"
-version = "5.2.0"
+version = "6.0.0"
 edition = "2024"
 authors = ["Firestorm Team"]
 description = "A semantic versioning tool for bumping version numbers"

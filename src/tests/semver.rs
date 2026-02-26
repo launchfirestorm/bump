@@ -1,214 +1,33 @@
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::OnceLock;
+// SemVer-specific tests
+use super::*;
+use std::path::PathBuf;
 use tempfile::TempDir;
-
-// Import types from bump module
-use crate::bump::{
-    BumpError, BumpType, PointType, ensure_directory_exists, get_git_branch,
-    get_git_commit_sha, resolve_path,
-};
-
-// Import types from version module
-use crate::version::{
-    CandidateSection, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
-};
-
-// RAII wrapper for test directories that automatically sets thread-local repo path
-struct TestRepo {
-    _temp_dir: TempDir,
-}
-
-impl TestRepo {
-    fn new(temp_dir: TempDir) -> Self {
-        crate::bump::set_test_repo_path(Some(temp_dir.path().to_path_buf()));
-        TestRepo { _temp_dir: temp_dir }
-    }
-
-    fn path(&self) -> &Path {
-        self._temp_dir.path()
-    }
-}
-
-impl Drop for TestRepo {
-    fn drop(&mut self) {
-        crate::bump::set_test_repo_path(None);
-    }
-}
-
-static TEST_GIT_CONFIG: OnceLock<PathBuf> = OnceLock::new();
-
-fn get_test_git_config() -> &'static Path {
-    TEST_GIT_CONFIG.get_or_init(|| {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("test-gitconfig");
-        let config_content = r#"[user]
-	email = test@example.com
-	name = Test User
-[commit]
-	gpgsign = false
-[tag]
-	gpgsign = false
-"#;
-        fs::write(&config_path, config_content).unwrap();
-        // Leak the TempDir so it persists for the entire test run
-        let path = config_path.clone();
-        std::mem::forget(temp_dir);
-        path
-    })
-}
-
-fn run_git_in(path: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", get_test_git_config())
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .arg("-C")
-        .arg(path)
-        .args(args)
-        .output()
-        .unwrap_or_else(|err| panic!("failed to run git -C {} {:?}: {}", path.display(), args, err));
-
-    if !output.status.success() {
-        panic!(
-            "git -C {} {:?} failed: {}",
-            path.display(),
-            args,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-}
-
-fn run_git_in_output(path: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .env("GIT_CONFIG_GLOBAL", get_test_git_config())
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .arg("-C")
-        .arg(path)
-        .args(args)
-        .output()
-        .unwrap_or_else(|err| panic!("failed to run git -C {} {:?}: {}", path.display(), args, err));
-
-    if !output.status.success() {
-        panic!(
-            "git -C {} {:?} failed: {}",
-            path.display(),
-            args,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn init_repo(path: &Path) {
-    run_git_in(path, &["init"]);
-    run_git_in(path, &["commit", "--allow-empty", "-m", "Initial commit"]);
-}
-
-fn create_temp_git_repo(tagged: bool) -> TestRepo {
-    let temp_dir = TempDir::new().unwrap();
-    let repo_path = temp_dir.path();
-    init_repo(repo_path);
-    if tagged {
-        run_git_in(repo_path, &["tag", "v1.2.3"]);
-    }
-    TestRepo::new(temp_dir)
-}
-
-fn create_temp_dir() -> TestRepo {
-    let temp_dir = TempDir::new().unwrap();
-    TestRepo::new(temp_dir)
-}
-
-fn git_rev_parse_short_in(path: &Path) -> String {
-    run_git_in_output(path, &["rev-parse", "--short", "HEAD"])
-}
-
-fn write_bump_toml(path: &Path, content: &str) {
-    fs::write(path, content).unwrap();
-}
-
-fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
-    let (major, minor, patch, candidate) = version;
-    let content = format!(r#"prefix = "v"
-
-[version]
-major = {}
-minor = {}
-patch = {}
-candidate = {}
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#, major, minor, patch, candidate);
-    fs::write(path, content).unwrap();
-}
-
-fn write_test_config_with_timestamp(path: &Path, version: (u32, u32, u32, u32), timestamp_format: &str) {
-    let (major, minor, patch, candidate) = version;
-    let content = format!(r#"prefix = "v"
-timestamp = "{}"
-
-[version]
-major = {}
-minor = {}
-patch = {}
-candidate = {}
-
-[candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[development]
-promotion = "git_sha"
-delimiter = "+"
-"#, timestamp_format, major, minor, patch, candidate);
-    fs::write(path, content).unwrap();
-}
-
-fn make_default_config(major: u32, minor: u32, patch: u32, candidate: u32) -> BumpConfig {
-    BumpConfig {
-        prefix: "v".to_string(),
-        timestamp: None,
-        version: VersionSection {
-            major,
-            minor,
-            patch,
-            candidate,
-        },
-        candidate: CandidateSection {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: DevelopmentSection {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    }
-}
 
 #[test]
 fn version_default() {
     let path = PathBuf::from("test.toml");
     let version = Version::default(&path);
 
-    assert_eq!(version.major, 0);
-    assert_eq!(version.minor, 1);
-    assert_eq!(version.patch, 0);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 0);
+            assert_eq!(*minor, 1);
+            assert_eq!(*patch, 0);
+            assert_eq!(*candidate, 0);
+        }
+        _ => panic!("Expected SemVer version type"),
+    }
     assert_eq!(version.path, path);
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.config.candidate.promotion, "minor");
-    assert_eq!(version.config.candidate.delimiter, "-rc");
-    assert_eq!(version.config.development.promotion, "git_sha");
-    assert_eq!(version.config.development.delimiter, "+");
+    match &version.config {
+        BumpConfig::SemVer(cfg) => {
+            assert_eq!(cfg.candidate.promotion, "minor");
+            assert_eq!(cfg.candidate.delimiter, "-rc");
+            assert_eq!(cfg.development.promotion, "git_sha");
+            assert_eq!(cfg.development.delimiter, "+");
+        }
+        _ => panic!("Expected SemVer config"),
+    }
 }
 
 #[test]
@@ -216,19 +35,20 @@ fn version_from_file_valid() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "prefix_"
+    let content = r#"[semver]
+prefix = "prefix_"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -237,10 +57,15 @@ delimiter = "+"
     let version = Version::from_file(&file_path).unwrap();
 
     assert_eq!(version.prefix, "prefix_");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 3);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 2);
+            assert_eq!(*patch, 3);
+            assert_eq!(*candidate, 0);
+        }
+        _ => panic!("Expected SemVer version type"),
+    }
     assert_eq!(version.path, file_path);
 }
 
@@ -249,19 +74,20 @@ fn version_from_file_invalid_major() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
+    let content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = "invalid"
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -280,19 +106,20 @@ fn version_from_file_invalid_minor() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
+    let content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = "invalid"
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -311,19 +138,20 @@ fn version_from_file_invalid_patch() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
+    let content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = "invalid"
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -342,19 +170,20 @@ fn version_from_file_invalid_candidate() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
+    let content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = "invalid"
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -391,14 +220,17 @@ fn version_to_file() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: file_path.clone(),
         config,
     };
 
+    version.file_init().unwrap();
     version.to_file().unwrap();
 
     let content = fs::read_to_string(&file_path).unwrap();
@@ -416,10 +248,12 @@ fn version_to_string_point() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 0,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 0,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -435,10 +269,12 @@ fn version_to_string_candidate() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -457,10 +293,12 @@ fn version_to_header() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -552,24 +390,33 @@ fn version_round_trip() {
     let original_version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 5,
-        minor: 10,
-        patch: 15,
-        candidate: 2,
+        version_type: VersionType::SemVer {
+            major: 5,
+            minor: 10,
+            patch: 15,
+            candidate: 2,
+        },
         path: file_path.clone(),
         config,
     };
 
     // Write to file
+    original_version.file_init().unwrap();
     original_version.to_file().unwrap();
 
     // Read from file
     let read_version = Version::from_file(&file_path).unwrap();
 
-    assert_eq!(original_version.major, read_version.major);
-    assert_eq!(original_version.minor, read_version.minor);
-    assert_eq!(original_version.patch, read_version.patch);
-    assert_eq!(original_version.candidate, read_version.candidate);
+    match (&original_version.version_type, &read_version.version_type) {
+        (VersionType::SemVer { major: orig_major, minor: orig_minor, patch: orig_patch, candidate: orig_candidate },
+         VersionType::SemVer { major: read_major, minor: read_minor, patch: read_patch, candidate: read_candidate }) => {
+            assert_eq!(orig_major, read_major);
+            assert_eq!(orig_minor, read_minor);
+            assert_eq!(orig_patch, read_patch);
+            assert_eq!(orig_candidate, read_candidate);
+        },
+        _ => panic!("Expected SemVer version types"),
+    }
 
     assert_eq!(original_version.path, read_version.path);
 }
@@ -580,9 +427,10 @@ fn version_file_with_comments() {
     let file_path = temp_dir.path().join("version.toml");
 
     let content = r#"# This is a comment
+[semver]
 prefix = ""
 
-[version]
+[semver.version]
 major = 1
 # Another comment
 minor = 2
@@ -590,11 +438,11 @@ patch = 3
 candidate = 0
 # End comment
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -602,10 +450,15 @@ delimiter = "+"
 
     let version = Version::from_file(&file_path).unwrap();
 
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 3);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 2);
+            assert_eq!(*patch, 3);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -613,19 +466,20 @@ fn version_file_with_whitespace() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = ""
+    let content = r#"[semver]
+prefix = ""
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -634,10 +488,15 @@ delimiter = "+"
     let version = Version::from_file(&file_path).unwrap();
 
     assert_eq!(version.prefix, "");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 3);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 2);
+            assert_eq!(*patch, 3);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -662,7 +521,10 @@ fn test_timestamp_config_none() {
     let version = Version::from_file(&file_path).unwrap();
 
     // When timestamp config is not set, it should be None
-    assert!(version.config.timestamp.is_none());
+    match &version.config {
+        Config::SemVer(cfg) => assert!(cfg.timestamp.is_none()),
+        _ => panic!("Expected SemVer config"),
+    }
     assert!(version.timestamp.is_none());
 }
 
@@ -676,8 +538,13 @@ fn test_timestamp_config_with_format() {
     let version = Version::from_file(&file_path).unwrap();
 
     // Config should have the format string
-    assert!(version.config.timestamp.is_some());
-    assert_eq!(version.config.timestamp.as_ref().unwrap(), "%Y-%m-%d");
+    match &version.config {
+        Config::SemVer(cfg) => {
+            assert!(cfg.timestamp.is_some());
+            assert_eq!(cfg.timestamp.as_ref().unwrap(), "%Y-%m-%d");
+        },
+        _ => panic!("Expected SemVer config"),
+    }
 
     // Timestamp should be generated during from_file
     assert!(version.timestamp.is_some());
@@ -727,20 +594,21 @@ fn test_timestamp_updates_on_bump() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("version.toml");
 
-    let content = r#"prefix = "v"
+    let content = r#"[semver]
+prefix = "v"
 timestamp = "%Y-%m-%d %H:%M:%S"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -768,20 +636,21 @@ fn test_timestamp_in_c_header_output() {
     let config_path = _repo.path().join("bump.toml");
     let output_path = _repo.path().join("version.h");
 
-        let config_content = r#"prefix = "v"
+        let config_content = r#"[semver]
+prefix = "v"
 timestamp = "%Y-%m-%d"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -809,19 +678,20 @@ fn test_timestamp_not_in_c_header_when_none() {
     let config_path = _repo.path().join("bump.toml");
     let output_path = _repo.path().join("version.h");
 
-    let config_content = r#"prefix = "v"
+    let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -854,25 +724,33 @@ fn test_timestamp_roundtrip() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: Some("2025-11-07 12:00:00 UTC".to_string()),
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 0,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 0,
+        },
         path: file_path.clone(),
         config,
     };
 
     // Write to file
+    version.file_init().unwrap();
     version.to_file().unwrap();
 
     // Read back from file
     let read_version = Version::from_file(&file_path).unwrap();
 
     // Config timestamp format should be preserved
-    assert_eq!(
-        read_version.config.timestamp,
-        Some("%Y-%m-%d %H:%M:%S %Z".to_string())
-    );
+    match &read_version.config {
+        Config::SemVer(cfg) => {
+            assert_eq!(
+                cfg.timestamp,
+                Some("%Y-%m-%d %H:%M:%S %Z".to_string())
+            );
+        },
+        _ => panic!("Expected SemVer config"),
+    }
 
     // Timestamp value should be generated (will be different from original)
     assert!(read_version.timestamp.is_some());
@@ -884,7 +762,10 @@ fn test_timestamp_default_version() {
     let version = Version::default(&path);
 
     // Default version should have no timestamp configured
-    assert!(version.config.timestamp.is_none());
+    match &version.config {
+        Config::SemVer(cfg) => assert!(cfg.timestamp.is_none()),
+        _ => panic!("Expected SemVer config"),
+    }
     assert!(version.timestamp.is_none());
 }
 
@@ -901,7 +782,10 @@ fn test_timestamp_with_candidate_bump() {
     version.bump(&BumpType::Candidate).unwrap();
 
     assert!(version.timestamp.is_some());
-    assert_eq!(version.candidate, 1);
+    match &version.version_type {
+        VersionType::SemVer { candidate, .. } => assert_eq!(*candidate, 1),
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Timestamp should be 8 digits (YYYYMMDD)
     let timestamp = version.timestamp.as_ref().unwrap();
@@ -918,13 +802,19 @@ fn test_timestamp_with_release_bump() {
 
     let mut version = Version::from_file(&file_path).unwrap();
 
-    assert_eq!(version.candidate, 1);
+    match &version.version_type {
+        VersionType::SemVer { candidate, .. } => assert_eq!(*candidate, 1),
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Release should update timestamp
     version.bump(&BumpType::Release).unwrap();
 
     assert!(version.timestamp.is_some());
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { candidate, .. } => assert_eq!(*candidate, 0),
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -952,10 +842,12 @@ fn version_bump_major() {
     let mut version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -963,10 +855,15 @@ fn version_bump_major() {
     version.bump(&BumpType::Point(PointType::Major)).unwrap();
 
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 2);
-    assert_eq!(version.minor, 0);
-    assert_eq!(version.patch, 0);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 2);
+            assert_eq!(*minor, 0);
+            assert_eq!(*patch, 0);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -976,10 +873,12 @@ fn version_bump_minor() {
     let mut version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -987,10 +886,15 @@ fn version_bump_minor() {
     version.bump(&BumpType::Point(PointType::Minor)).unwrap();
 
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 3);
-    assert_eq!(version.patch, 0);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 3);
+            assert_eq!(*patch, 0);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -1000,10 +904,12 @@ fn version_bump_patch() {
     let mut version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1011,24 +917,34 @@ fn version_bump_patch() {
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
 
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 4);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 2);
+            assert_eq!(*patch, 4);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
 fn version_bump_candidate() {
     let mut config = make_default_config(1, 2, 3, 4);
-    config.prefix = "prefix_".to_string();
+    match &mut config {
+        Config::SemVer(cfg) => cfg.prefix = "prefix_".to_string(),
+        _ => panic!("Expected SemVer config"),
+    }
 
     let mut version = Version {
         prefix: "prefix_".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1036,10 +952,15 @@ fn version_bump_candidate() {
     version.bump(&BumpType::Candidate).unwrap();
 
     assert_eq!(version.prefix, "prefix_");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 2);
-    assert_eq!(version.patch, 3); // Patch is unchanged when incrementing existing candidate
-    assert_eq!(version.candidate, 5);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 2);
+            assert_eq!(*patch, 3); // Patch is unchanged when incrementing existing candidate
+            assert_eq!(*candidate, 5);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -1049,10 +970,12 @@ fn version_bump_candidate_existing_value() {
     let mut version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1060,10 +983,15 @@ fn version_bump_candidate_existing_value() {
     // Test candidate bump - should increment candidate
     version.bump(&BumpType::Candidate).unwrap();
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 1); // Unchanged
-    assert_eq!(version.minor, 2); // Unchanged  
-    assert_eq!(version.patch, 3); // Unchanged when incrementing existing candidate
-    assert_eq!(version.candidate, 5); // Incremented
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1); // Unchanged
+            assert_eq!(*minor, 2); // Unchanged  
+            assert_eq!(*patch, 3); // Unchanged when incrementing existing candidate
+            assert_eq!(*candidate, 5); // Incremented
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -1073,10 +1001,12 @@ fn version_bump_sequence() {
     let mut version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 0,
-        patch: 0,
-        candidate: 0,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 0,
+            patch: 0,
+            candidate: 0,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1084,32 +1014,52 @@ fn version_bump_sequence() {
     // Bump patch
     version.bump(&BumpType::Point(PointType::Patch)).unwrap();
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 0);
-    assert_eq!(version.patch, 1);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 0);
+            assert_eq!(*patch, 1);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Bump candidate (should bump minor when candidate is 0)
     version.bump(&BumpType::Candidate).unwrap();
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 1); // Minor bumped because candidate was 0
-    assert_eq!(version.patch, 0); // Candidate bumps reset patch to 0
-    assert_eq!(version.candidate, 1);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 1); // Minor bumped because candidate was 0
+            assert_eq!(*patch, 0); // Candidate bumps reset patch to 0
+            assert_eq!(*candidate, 1);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Bump minor (should reset patch and candidate)
     version.bump(&BumpType::Point(PointType::Minor)).unwrap();
-    assert_eq!(version.major, 1);
-    assert_eq!(version.minor, 2); // Was 1, now bumped to 2
-    assert_eq!(version.patch, 0);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 2); // Was 1, now bumped to 2
+            assert_eq!(*patch, 0);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Bump major (should reset minor, patch and candidate)
     version.bump(&BumpType::Point(PointType::Major)).unwrap();
-    assert_eq!(version.major, 2);
-    assert_eq!(version.minor, 0);
-    assert_eq!(version.patch, 0);
-    assert_eq!(version.candidate, 0);
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 2);
+            assert_eq!(*minor, 0);
+            assert_eq!(*patch, 0);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -1138,10 +1088,12 @@ fn version_bump_patch_with_candidate() {
     let mut version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1150,10 +1102,15 @@ fn version_bump_patch_with_candidate() {
 
     // Patch bump should increment patch and reset candidate
     assert_eq!(version.prefix, "v");
-    assert_eq!(version.major, 1); // Unchanged
-    assert_eq!(version.minor, 2); // Unchanged
-    assert_eq!(version.patch, 4); // Incremented
-    assert_eq!(version.candidate, 0); // Reset
+    match &version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1); // Unchanged
+            assert_eq!(*minor, 2); // Unchanged
+            assert_eq!(*patch, 4); // Incremented
+            assert_eq!(*candidate, 0); // Reset
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -1163,10 +1120,12 @@ fn version_to_string_candidate_with_value() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1182,10 +1141,12 @@ fn version_to_string_none_tagged_without_candidate() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 0,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 0,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1203,10 +1164,12 @@ fn version_to_string_point_with_candidate() {
     let version = Version {
         prefix: "v".to_string(),
         timestamp: None,
-        major: 1,
-        minor: 2,
-        patch: 3,
-        candidate: 4,
+        version_type: VersionType::SemVer {
+            major: 1,
+            minor: 2,
+            patch: 3,
+            candidate: 4,
+        },
         path: PathBuf::from("test.toml"),
         config,
     };
@@ -1231,16 +1194,17 @@ fn version_preserves_comments_when_writing() {
 #
 # https://github.com/launchfirestorm/bump
 
+[semver]
 prefix = "v"
 
 # NOTE: This section is modified by the bump command
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"  # ["minor", "major", "patch"]
 delimiter = "-rc"
 
@@ -1248,7 +1212,7 @@ delimiter = "-rc"
 #  - git_sha ( 7 char sha1 of the current commit )
 #  - branch ( append branch name )
 #  - full ( <branch>_<sha1> )
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1256,9 +1220,12 @@ delimiter = "+"
 
     // Load the version and modify it
     let mut version = Version::from_file(&file_path).unwrap();
-    version.major = 2;
-    version.minor = 0;
-    version.patch = 0;
+    version.version_type = VersionType::SemVer {
+        major: 2,
+        minor: 0,
+        patch: 0,
+        candidate: 0,
+    };
 
     // Write it back
     version.to_file().unwrap();
@@ -1287,19 +1254,20 @@ fn test_gen_command_c_output() {
     let output_path = _repo.path().join("version.h");
 
     // Create a test bump.toml file
-    let config_content = r#"prefix = "v"
+    let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1335,19 +1303,20 @@ fn test_gen_command_go_output() {
     let output_path = _repo.path().join("version.go");
 
     // Create a test bump.toml file
-    let config_content = r#"prefix = "v"
+    let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 2
 minor = 1
 patch = 0
 candidate = 5
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "branch"
 delimiter = "+"
 "#;
@@ -1382,19 +1351,20 @@ fn test_gen_command_java_output() {
     let output_path = _repo.path().join("Version.java");
 
     // Create a test bump.toml file
-    let config_content = r#"prefix = "release-"
+    let config_content = r#"[semver]
+prefix = "release-"
 
-[version]
+[semver.version]
 major = 3
 minor = 0
 patch = 1
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "major"
 delimiter = "-beta"
 
-[development]
+[semver.development]
 promotion = "full"
 delimiter = "_"
 "#;
@@ -1429,19 +1399,20 @@ fn test_gen_command_csharp_output() {
     let output_path = _repo.path().join("Version.cs");
 
     // Create a test bump.toml file
-    let config_content = r#"prefix = ""
+    let config_content = r#"[semver]
+prefix = ""
 
-[version]
+[semver.version]
 major = 0
 minor = 5
 patch = 12
 candidate = 2
 
-[candidate]
+[semver.candidate]
 promotion = "patch"
 delimiter = "-alpha"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "-dev"
 "#;
@@ -1475,19 +1446,20 @@ fn test_development_suffix_strategies() {
     let config_path = temp_dir.path().join("bump.toml");
 
     // Test git_sha strategy
-    let config_content_sha = r#"prefix = "v"
+    let config_content_sha = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1495,19 +1467,20 @@ delimiter = "+"
     let version_sha = Version::from_file(&config_path).unwrap();
 
     // Test branch strategy
-    let config_content_branch = r#"prefix = "v"
+    let config_content_branch = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "branch"
 delimiter = "+"
 "#;
@@ -1515,19 +1488,20 @@ delimiter = "+"
     let version_branch = Version::from_file(&config_path).unwrap();
 
     // Test full strategy
-    let config_content_full = r#"prefix = "v"
+    let config_content_full = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "full"
 delimiter = "+"
 "#;
@@ -1535,14 +1509,32 @@ delimiter = "+"
     let version_full = Version::from_file(&config_path).unwrap();
 
     // Verify the promotion strategies are correctly configured
-    assert_eq!(version_sha.config.development.promotion, "git_sha");
-    assert_eq!(version_branch.config.development.promotion, "branch");
-    assert_eq!(version_full.config.development.promotion, "full");
+    match &version_sha.config {
+        Config::SemVer(cfg) => assert_eq!(cfg.development.promotion, "git_sha"),
+        _ => panic!("Expected SemVer config"),
+    }
+    match &version_branch.config {
+        Config::SemVer(cfg) => assert_eq!(cfg.development.promotion, "branch"),
+        _ => panic!("Expected SemVer config"),
+    }
+    match &version_full.config {
+        Config::SemVer(cfg) => assert_eq!(cfg.development.promotion, "full"),
+        _ => panic!("Expected SemVer config"),
+    }
 
     // Verify delimiters
-    assert_eq!(version_sha.config.development.delimiter, "+");
-    assert_eq!(version_branch.config.development.delimiter, "+");
-    assert_eq!(version_full.config.development.delimiter, "+");
+    match &version_sha.config {
+        Config::SemVer(cfg) => assert_eq!(cfg.development.delimiter, "+"),
+        _ => panic!("Expected SemVer config"),
+    }
+    match &version_branch.config {
+        Config::SemVer(cfg) => assert_eq!(cfg.development.delimiter, "+"),
+        _ => panic!("Expected SemVer config"),
+    }
+    match &version_full.config {
+        Config::SemVer(cfg) => assert_eq!(cfg.development.delimiter, "+"),
+        _ => panic!("Expected SemVer config"),
+    }
 }
 
 #[test]
@@ -1551,79 +1543,97 @@ fn test_candidate_promotion_strategies() {
     let config_path = temp_dir.path().join("bump.toml");
 
     // Test minor promotion strategy (default)
-    let config_content_minor = r#"prefix = "v"
+    let config_content_minor = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
     fs::write(&config_path, config_content_minor).unwrap();
     let mut version_minor = Version::from_file(&config_path).unwrap();
     version_minor.bump(&BumpType::Candidate).unwrap();
-    assert_eq!(version_minor.major, 1);
-    assert_eq!(version_minor.minor, 1); // Should be bumped
-    assert_eq!(version_minor.patch, 0); // Should be reset
-    assert_eq!(version_minor.candidate, 1);
+    match &version_minor.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1);
+            assert_eq!(*minor, 1); // Should be bumped
+            assert_eq!(*patch, 0); // Should be reset
+            assert_eq!(*candidate, 1);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Test major promotion strategy
-    let config_content_major = r#"prefix = "v"
+    let config_content_major = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "major"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
     fs::write(&config_path, config_content_major).unwrap();
     let mut version_major = Version::from_file(&config_path).unwrap();
     version_major.bump(&BumpType::Candidate).unwrap();
-    assert_eq!(version_major.major, 2); // Should be bumped
-    assert_eq!(version_major.minor, 0); // Should be reset
-    assert_eq!(version_major.patch, 0); // Should be reset
-    assert_eq!(version_major.candidate, 1);
+    match &version_major.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 2); // Should be bumped
+            assert_eq!(*minor, 0); // Should be reset
+            assert_eq!(*patch, 0); // Should be reset
+            assert_eq!(*candidate, 1);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 
     // Test patch promotion strategy
-    let config_content_patch = r#"prefix = "v"
+    let config_content_patch = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "patch"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
     fs::write(&config_path, config_content_patch).unwrap();
     let mut version_patch = Version::from_file(&config_path).unwrap();
     version_patch.bump(&BumpType::Candidate).unwrap();
-    assert_eq!(version_patch.major, 1); // Should be unchanged
-    assert_eq!(version_patch.minor, 2); // Should be unchanged
-    assert_eq!(version_patch.patch, 4); // Should be bumped
-    assert_eq!(version_patch.candidate, 1);
+    match &version_patch.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 1); // Should be unchanged
+            assert_eq!(*minor, 2); // Should be unchanged
+            assert_eq!(*patch, 4); // Should be bumped
+            assert_eq!(*candidate, 1);
+        },
+        _ => panic!("Expected SemVer version type"),
+    }
 }
 
 #[test]
@@ -1634,19 +1644,20 @@ fn test_multiple_output_files() {
     let output_path_2 = _repo.path().join("include/version2.h");
 
         // Create a test bump.toml file
-        let config_content = r#"prefix = "v"
+        let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1702,19 +1713,20 @@ fn test_update_cargo_toml() {
     let cargo_path = _repo.path().join("Cargo.toml");
 
         // Create a test bump.toml file
-        let config_content = r#"prefix = "v"
+        let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 2
 minor = 3
 patch = 4
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1769,19 +1781,20 @@ fn test_update_cargo_toml_with_dev_suffix() {
     let cargo_path = _repo.path().join("Cargo.toml");
 
         // Create a test bump.toml file
-        let config_content = r#"prefix = "v"
+        let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1817,19 +1830,20 @@ fn test_fully_qualified_string_with_dev_suffix_when_untagged() {
     let _repo = create_temp_git_repo(false);
     let config_path = _repo.path().join("bump.toml");
     let short_sha = git_rev_parse_short_in(_repo.path());
-    let config_content = r#"prefix = "v"
+    let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1849,19 +1863,20 @@ delimiter = "+"
 fn test_fully_qualified_string_without_dev_suffix_when_tagged() {
     let _repo = create_temp_git_repo(true);
     let config_path = _repo.path().join("bump.toml");
-    let config_content = r#"prefix = "v"
+    let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 2
 patch = 3
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1883,19 +1898,20 @@ fn test_update_cargo_toml_missing_package_section() {
     let cargo_path = _repo.path().join("Cargo.toml");
 
     // Create a test bump.toml file
-    let config_content = r#"prefix = "v"
+    let config_content = r#"[semver]
+prefix = "v"
 
-[version]
+[semver.version]
 major = 1
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
+[semver.candidate]
 promotion = "minor"
 delimiter = "-rc"
 
-[development]
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 "#;
@@ -1917,5 +1933,74 @@ serde = "1.0"
             assert!(msg.contains("no [package] section"));
         }
         _ => panic!("Expected ParseError"),
+    }
+}
+
+#[test]
+fn test_init_semver_creates_proper_structure() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    // Create a new SemVer version by initializing
+    let version = Version {
+        prefix: "v".to_string(),
+        timestamp: None,
+        version_type: VersionType::SemVer {
+            major: 0,
+            minor: 1,
+            patch: 0,
+            candidate: 0,
+        },
+        path: config_path.clone(),
+        config: crate::version::default_semver_config("v".to_string(), 0, 1, 0, 0),
+    };
+    
+    version.file_init().unwrap();
+
+    // Verify file was created
+    assert!(config_path.exists());
+
+    // Read the file and verify structure
+    let content = fs::read_to_string(&config_path).unwrap();
+
+    // Check for header
+    assert!(content.contains("https://github.com/launchfirestorm/bump"));
+
+    // Check for [semver] section
+    assert!(content.contains("[semver]"));
+    assert!(content.contains("prefix = \"v\""));
+
+    // Check version values
+    assert!(content.contains("[semver.version]"));
+    assert!(content.contains("major = 0"));
+    assert!(content.contains("minor = 0"));
+    assert!(content.contains("patch = 0"));
+    assert!(content.contains("candidate = 0"));
+
+    // Check for candidate section with comments
+    assert!(content.contains("[semver.candidate]"));
+    assert!(content.contains("promotion = \"minor\""));
+    assert!(content.contains("delimiter = \"-rc\""));
+    assert!(content.contains("Candidate promotion strategies:"));
+
+    // Check for development section with comments
+    assert!(content.contains("[semver.development]"));
+    assert!(content.contains("promotion = \"git_sha\""));
+    assert!(content.contains("delimiter = \"+\""));
+    assert!(content.contains("Development suffix strategies:"));
+    assert!(content.contains("git_sha"));
+    assert!(content.contains("branch"));
+    assert!(content.contains("full"));
+
+    // Verify it can be read back
+    let read_version = Version::from_file(&config_path).unwrap();
+    match &read_version.version_type {
+        VersionType::SemVer { major, minor, patch, candidate } => {
+            assert_eq!(*major, 0);
+            assert_eq!(*minor, 0);
+            assert_eq!(*patch, 0);
+            assert_eq!(*candidate, 0);
+        },
+        _ => panic!("Expected SemVer version type"),
     }
 }

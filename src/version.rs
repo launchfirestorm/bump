@@ -275,11 +275,8 @@ impl Version {
         }
     }
 
-    pub fn to_file(&self) -> Result<(), BumpError> {
-        // Try to read existing file to preserve comments and formatting
-        let original_content = fs::read_to_string(&self.path).unwrap_or_else(|_| {
-            // If file doesn't exist, create default structure with header
-            match &self.config {
+    pub fn file_init(&self) -> Result<(), BumpError> {
+        let contents = match &self.config {
                 Config::SemVer(_) => r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
 #  ) _ < )(__)(  )    (  )___/
@@ -289,7 +286,7 @@ impl Version {
 
 [semver]
 prefix = "v"
-timestamp = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax
+timestamp = "%Y-%m-%d %H:%M:%S %Z"   # optional: strftime syntax for build timestamp
 
 # NOTE: This section is modified by the bump command
 [semver.version]
@@ -298,14 +295,18 @@ minor = 0
 patch = 0
 candidate = 0
 
+# Candidate promotion strategies:  (when creating first candidate)
+#  - "major" : increment major, zero minor and patch
+#  - "minor" : increment minor, zero patch
+#  - "patch" : increment patch
 [semver.candidate]
-promotion = "minor"  # ["minor", "major", "patch"]
+promotion = "minor"
 delimiter = "-rc"
 
-# promotion strategies:
-#  - git_sha ( 7 char sha1 of the current commit )
-#  - branch ( append branch name )
-#  - full ( <branch>_<sha1> )
+# Development suffix strategies:
+#  - "git_sha" : append 7 char sha1 of the current commit (default)
+#  - "branch"  : append the current git branch name
+#  - "full"    : append <branch>_<sha1>
 [semver.development]
 promotion = "git_sha"
 delimiter = "+"
@@ -320,17 +321,31 @@ delimiter = "+"
 
 [calver]
 prefix = ""
-format = "%Y.%m.%d"
+format = "%Y.%m.%d"   # strftime date format
 
+# Conflict resolution when version matches existing git tag:
+#  - "suffix"    : append numeric suffix (e.g., 2024.02.25-1)
+#  - "overwrite" : reuse the same version
 [calver.conflict]
-resolution = "suffix"  # overwrite | suffix
+resolution = "suffix"
 suffix = 0
 delimiter = "-"
 "#
                     .to_string(),
-            }
-        });
 
+    };
+        fs::write(&self.path, contents).map_err(BumpError::IoError)
+    }
+
+    pub fn to_file(&self) -> Result<(), BumpError> {
+        // Try to read existing file to preserve comments and formatting
+        if !self.path.exists() {
+            return Err(BumpError::IoError(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("{}", self.path.display()),
+            )));
+        }
+        let original_content = fs::read_to_string(&self.path).map_err(BumpError::IoError)?;
         // Parse the TOML document while preserving formatting
         let mut doc = original_content
             .parse::<DocumentMut>()
@@ -480,13 +495,13 @@ delimiter = "-"
                                 "{}{}{}",
                                 base,
                                 semver_config.development.delimiter,
-                                get_development_suffix(&self)?
+                                get_development_suffix(self)?
                             ),
                             (false, _) => format!(
                                 "{}{}{}",
                                 candidate_str,
                                 semver_config.development.delimiter,
-                                get_development_suffix(&self)?
+                                get_development_suffix(self)?
                             ),
                         };
 
@@ -644,12 +659,11 @@ delimiter = "-"
                                     for tag in tags {
                                         if tag == base_version {
                                             existing_suffix = 0;
-                                        } else if let Some(suffix_str) = tag.strip_prefix(&format!("{}{}", base_version, calver_config.conflict.delimiter)) {
-                                            if let Ok(s) = suffix_str.parse::<u32>() {
-                                                if s > existing_suffix {
-                                                    existing_suffix = s;
-                                                }
-                                            }
+                                        } else if let Some(suffix_str) = tag.strip_prefix(&format!("{}{}", base_version, calver_config.conflict.delimiter))
+                                            && let Ok(s) = suffix_str.parse::<u32>()
+                                            && s > existing_suffix
+                                        {
+                                            existing_suffix = s;
                                         }
                                     }
                                     

@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 pub fn cli() -> Command {
     Command::new("bump")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Semantic Version bumping with sane defaults")
+        .about("Automatic version bumping with sane defaults")
         .arg(
             Arg::new("bumpfile")
                 .short('f')
@@ -68,7 +68,7 @@ pub fn cli() -> Command {
         )
         .subcommand(
             Command::new("update")
-                .about("Update PATH to bump version")
+                .about("bump can update version in known file types (i.e: Cargo.toml)")
                 .arg(
                     Arg::new("path")
                         .value_name("PATH")

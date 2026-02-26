@@ -1,19 +1,21 @@
 # `bump` automatic versioning
 
-> An un-opinionated command-line tool for semantic versioning management with TOML-based configuration, multi-language code generation, and git-aware version detection. No assumption is made, you `bump` when you want, how you want.
+> An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration, multi-language code generation, and git-aware version detection. No assumption is made, you `bump` when you want, how you want.
 
 ## Why?
 I got tired of bespoke scripts and tons of regex parsing that differentiated slightly from repo to repo just to bump versions. So I created `bump` to be _dead simple_ and **without opinion**. Everyone wants to version differently and that's okay, with a sprinkling of convention and a large helping of automation this tool allows you to never have to worry about versions again!
 
 ## Features
 
+- **Dual Versioning Schemes**: Choose between **SemVer** (semantic versioning) or **CalVer** (calendar versioning) based on your project needs
 - **TOML Configuration**: Declare your version in a file and `bump` will modify it automatically. Define behavior and preference from the same file. Comments are preserved. Create one with `bump init`
-- **Easy Build system integration**: Define in _one place_ and use everywhere with `bump --print`
-- **Semantic Versioning**: No surprises, no assumptions, `--major`, `--minor`, `--patch` do exactly what you think
-- **Multi-Language Support**: Generate version files for C, Go, Java, and C#, useful for injecting version strings into binaries
-- **Git Integration**: Automatic SHA appending for untagged commits
+- **Easy Build System Integration**: Define in _one place_ and use everywhere with `bump --print`
+- **Semantic Versioning**: Full support for `--major`, `--minor`, `--patch`, `--candidate`, and `--release` bumps with configurable promotion strategies
+- **Calendar Versioning**: Date-based versions with strftime format patterns (e.g., `v2026.02.25`) and automatic conflict resolution
+- **Multi-Language Support**: Generate version files for C, Go, Java, C#, and Python - useful for injecting version strings into binaries
+- **Git Integration**: Automatic SHA appending for untagged commits, branch detection, and smart tag conflict handling
 - **Flexible Output**: Support for multiple output files from a single `bump.toml`
-- **Promotion Strategies**: Configurable promotion strategies for both Development and Candidates
+- **Comment Preservation**: All comments and formatting in your TOML file are preserved across updates
 
 
 ## Installation
@@ -77,7 +79,9 @@ The resulting binary is statically linked and can run on virtually any Linux dis
 
 ## Configuration
 
-Bump uses a TOML configuration file (`bump.toml`) to manage versioning settings:
+Bump uses a TOML configuration file (`bump.toml`) to manage versioning settings. You can choose between **SemVer** or **CalVer** when initializing.
+
+### SemVer Configuration
 
 ```toml
 #  ____  __  __  __  __  ____ 
@@ -87,94 +91,219 @@ Bump uses a TOML configuration file (`bump.toml`) to manage versioning settings:
 #
 # https://github.com/launchfirestorm/bump
 
+[semver]
 prefix = "v"
-timestamp = "%Y-%m-%d %H:%M:%S"   # strftime syntax
+timestamp = "%Y-%m-%d %H:%M:%S %Z"   # optional: strftime syntax for build timestamp
 
 # NOTE: This section is modified by the bump command
-[version]
+[semver.version]
 major = 0
 minor = 0
 patch = 0
 candidate = 0
 
-[candidate]
-promotion = "minor"  # ["minor", "major", "patch"]
+# Candidate promotion strategies:  (when creating first candidate)
+#  - "major" : increment major, zero minor and patch
+#  - "minor" : increment minor, zero patch
+#  - "patch" : increment patch
+[semver.candidate]
+promotion = "minor"
 delimiter = "-rc"
 
-# promotion strategies:
-#  - git_sha ( 7 char sha1 of the current commit )
-#  - branch ( append branch name )
-#  - full ( <branch>_<sha1> )
-[development]
+# Development suffix strategies:
+#  - "git_sha" : append 7 char sha1 of the current commit (default)
+#  - "branch"  : append the current git branch name
+#  - "full"    : append <branch>_<sha1>
+[semver.development]
 promotion = "git_sha"
 delimiter = "+"
 ```
 
+### CalVer Configuration
+
+```toml
+#  ____  __  __  __  __  ____ 
+# (  _ \(  )(  )(  \/  )(  _ \
+#  ) _ < )(__)(  )    (  )___/
+# (____/(______)(_/\/\_)(__)  
+#
+# https://github.com/launchfirestorm/bump
+
+[calver]
+prefix = ""
+format = "%Y.%m.%d"   # strftime date format
+
+# Conflict resolution when version matches existing git tag:
+#  - "suffix"    : append numeric suffix (e.g., 2024.02.25-1)
+#  - "overwrite" : reuse the same version
+[calver.conflict]
+resolution = "suffix"
+suffix = 0
+delimiter = "-"
+```
+
 ### Configuration Options
 
+#### SemVer Options
+
 - **`prefix`**: Version tag prefix (e.g., "v", "release-", or empty string)
-- **`timestamp`**: a strftime syntax string that will be added to output files (see `bump gen`)
-- **`[version]`**: Current version numbers (automatically updated by bump commands)
-- **`[candidate]`**: 
-  - `promotion`: Which version component to bump when creating candidates ("minor", "major", "patch")
+- **`timestamp`**: strftime format string for timestamps in generated files (optional)
+- **`[semver.version]`**: Current version numbers (automatically updated by bump commands)
+- **`[semver.candidate]`**: 
+  - `promotion`: Which version component to bump when promoting candidates ("minor", "major", or "patch")
   - `delimiter`: Separator for candidate versions (default: "-rc")
-- **`[development]`**: 
-  - `promotion`: Strategy for development versions ("git_sha", "branch", "full")
+- **`[semver.development]`**: 
+  - `promotion`: Strategy for development versions ("git_sha", "branch", or "full")
   - `delimiter`: Separator for development versions (default: "+")
 
-**Comment Preservation**: All comments in your `bump.toml` are preserved when the file is updated!
+#### CalVer Options
+
+- **`prefix`**: Version tag prefix (e.g., "v", "release-", or empty string)
+- **`format`**: strftime format pattern for date-based versions (e.g., "%Y.%m.%d" → "2026.02.25")
+- **`[calver.conflict]`**: 
+  - `resolution`: How to handle same-day version conflicts ("suffix" or "overwrite")
+  - `suffix`: Current suffix number (automatically incremented when conflicts detected)
+  - `delimiter`: Separator for suffix (default: "-")
+
+**Note**: All comments in your `bump.toml` are preserved when the file is updated!
 
 ## Commands
 
-### Versioning Commands
+### Basic Commands
 
 ```bash
-# Initialize a new bump.toml file
+# Initialize a new bump.toml file (defaults to SemVer)
 bump init [bump.toml]
 
+# Initialize with CalVer instead
+bump init --calver [bump.toml]
+
+# Print current version
+bump --print [bump.toml]      # Full version with suffixes
+bump --print-base [bump.toml] # Base version only
+```
+
+### SemVer Commands
+
+```bash
 # Bump version numbers (updates bump.toml)
 bump --major     # 1.0.0 -> 2.0.0
 bump --minor     # 1.0.0 -> 1.1.0  
 bump --patch     # 1.0.0 -> 1.0.1
 bump --candidate # 1.0.0 -> 1.1.0-rc1 (or increment rc if already candidate)
-bump --release   # 1.1.0-rc1 -> 1.1.0
-
-# Print current version
-bump --print [bump.toml]      # With candidate suffix if applicable
-bump --print-base [bump.toml] # Base version only (no candidate suffix)
+bump --release   # 1.1.0-rc1 -> 1.1.0 (promote candidate to release)
 ```
 
-## Workflow
-
-### Release Pipeline
-For tagged releases (point releases and candidates):
+### CalVer Commands
 
 ```bash
-# Version your changes
-bump --major|--minor|--patch|--candidate|--release  # Updates bump.toml
-git commit -m "Bump to version $(bump -p)"
-bump tag
+# CalVer versions are automatically generated from the current date
+bump             # Updates to current date (e.g., v2026.02.25)
 
-# PRO TIP: Add these generated files to .gitignore, that way you don't fall into the "behind by one" trap
+# If version already exists as git tag:
+# - With "suffix" resolution: v2026.02.25-1, v2026.02.25-2, etc.
+# - With "overwrite" resolution: reuses v2026.02.25
+```
 
-# Generate version files (detects git tag, no SHA appended)
-bump gen --lang=c -f bump.toml version.h include/version.h
+### Code Generation
+
+```bash
+# Generate version files for different languages
+bump gen --lang=c version.h
 bump gen --lang=go version.go
 bump gen --lang=java Version.java
 bump gen --lang=csharp Version.cs
+bump gen --lang=python version.py
 
-# ..build code 
+# Generate multiple files at once
+bump gen --lang=c -f bump.toml version.h include/version.h
+
+# SemVer generates: VERSION, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, etc.
+# CalVer generates: VERSION_STRING only (simplified for date-based versions)
 ```
 
+### Git Integration
 
-## Key Changes in v5.0.0
+```bash
+# Create a git tag for the current version
+bump tag
 
-- **New**: TOML-based configuration format (`bump.toml`)
-- **Enhanced**: Comment preservation when updating configuration files
-- **Improved**: Cross-platform installation script (no authentication required)
-- **Added**: Configurable candidate and development promotion strategies
-- **Added**: `tag` subcommand for creating git tags
-- **Breaking**: Configuration file format changed from flat file to TOML
-- **Enhanced**: Better error handling and user experience
+# Commit and tag in one step
+bump --minor
+git commit -am "Bump to $(bump -p)"
+bump tag
+```
+
+## Workflow Examples
+
+### SemVer Release Pipeline
+
+For traditional semantic versioning with candidates:
+
+```bash
+# Initialize SemVer project
+bump init
+
+# Develop with automatic git SHA suffixes
+bump gen --lang=c version.h  # Generates: 0.0.0+a1b2c3d (untagged)
+
+# Create a release candidate
+bump --candidate              # 0.0.0 -> 0.1.0-rc1
+git commit -am "Bump to $(bump -p)"
+bump tag
+
+# Test and iterate
+bump --candidate              # 0.1.0-rc1 -> 0.1.0-rc2
+git commit -am "Bump to $(bump -p)"
+bump tag
+
+# Promote to release
+bump --release                # 0.1.0-rc2 -> 0.1.0
+git commit -am "Release $(bump -p)"
+bump tag
+
+# Generate final version files (detects tag, no SHA)
+bump gen --lang=c version.h
+bump gen --lang=go version.go
+# Build and deploy...
+```
+
+### CalVer Release Pipeline
+
+For date-based versioning ideal for continuous deployment:
+
+```bash
+# Initialize CalVer project
+bump init --calver
+
+# Each day gets a new version automatically
+bump                          # Generates: v2026.02.25
+git commit -am "Release $(bump -p)"
+bump tag
+bump gen --lang=python version.py
+# Build and deploy...
+
+# Multiple releases same day? Automatic suffix handling:
+bump                          # v2026.02.25-1
+git commit -am "Hotfix $(bump -p)"
+bump tag
+bump gen --lang=python version.py
+# Build and deploy...
+```
+
+**PRO TIP**: Add generated version files to `.gitignore` to avoid "behind by one" issues
+
+
+## Version Scheme Comparison
+
+| Feature | SemVer | CalVer |
+|---------|--------|--------|
+| **Format** | major.minor.patch | Customizable date format |
+| **Example** | v1.2.3, v1.2.0-rc1 | v2026.02.25, v2026.02.25-1 |
+| **Best For** | Libraries, APIs, traditional releases | SaaS, continuous deployment |
+| **Bumping** | Explicit (--major, --minor, --patch) | Automatic (current date) |
+| **Candidates** | Yes (--candidate, --release) | No (use suffix for same-day releases) |
+| **Generated Code** | All version components | VERSION_STRING only |
+| **Conflict Resolution** | N/A | Automatic suffix increment or overwrite |
 
 ## [MIT License](./LICENSE)

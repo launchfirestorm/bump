@@ -13,7 +13,7 @@ use std::cell::RefCell;
 #[cfg(test)]
 thread_local! {
     /// Test-only: allows tests to override the git repository path without changing CWD
-    static TEST_REPO_PATH: RefCell<Option<PathBuf>> = RefCell::new(None);
+    static TEST_REPO_PATH: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -178,7 +178,7 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
             path: filepath.clone(),
             config: crate::version::default_calver_config(prefix.to_string()),
         };
-        version.to_file()?;
+        version.file_init()?;
         println!("Initialized new CalVer version file at '{}'", filepath.display());
     } else {
         // SemVer - prompt for tag or manual
@@ -195,7 +195,7 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
                     println!("Found git tag: {git_tag}");
                     let mut git_version = Version::from_string(&git_tag, &filepath)?;
                     git_version.prefix = prefix.to_string(); // Override prefix from CLI
-                    git_version.to_file()?;
+                    git_version.file_init()?;
                 }
                 Err(err) => {
                     return Err(err);
@@ -204,7 +204,7 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
         } else {
             let mut version = prompt_for_version(&filepath)?;
             version.prefix = prefix.to_string(); // Override prefix from CLI
-            version.to_file()?;
+            version.file_init()?;
         }
 
         println!("Initialized new SemVer version file at '{}'", filepath.display());
