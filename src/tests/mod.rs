@@ -15,7 +15,7 @@ pub use crate::bump::{
 // Import types from version module
 pub use crate::version::{
     CandidateSection, Config, Config as BumpConfig, DevelopmentSection, Version, VersionSection,
-    SemVerConfig, CalVerConfig, CalVerConflictSection, VersionType,
+    SemVerConfig, CalVerConfig, CalVerConflictSection, CalVerFormatSection, CalVerVersionSection, VersionType,
 };
 
 // RAII wrapper for test directories that automatically sets thread-local repo path
@@ -214,9 +214,24 @@ delimiter = "-"
 
 #[allow(dead_code)]
 pub fn make_calver_config(suffix: u32) -> BumpConfig {
+    let now = chrono::Utc::now();
     BumpConfig::CalVer(CalVerConfig {
-        prefix: "".to_string(),
-        format: "%Y.%m.%d".to_string(),
+        format: CalVerFormatSection {
+            prefix: "".to_string(),
+            delimiter: ".".to_string(),
+            year: "%Y".to_string(),
+            month: Some("%m".to_string()),
+            day: Some("%d".to_string()),
+            minor: Some(false),
+            micro: Some(false),
+        },
+        version: CalVerVersionSection {
+            year: now.format("%Y").to_string(),
+            month: Some(now.format("%m").to_string()),
+            day: Some(now.format("%d").to_string()),
+            minor: None,
+            micro: None,
+        },
         conflict: CalVerConflictSection {
             resolution: "suffix".to_string(),
             suffix,
