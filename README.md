@@ -9,11 +9,12 @@ I got tired of bespoke scripts and tons of regex parsing that differentiated sli
 
 - **Dual Versioning Schemes**: Choose between **SemVer** (semantic versioning) or **CalVer** (calendar versioning) based on your project needs
 - **TOML Configuration**: Declare your version in a file and `bump` will modify it automatically. Define behavior and preference from the same file. Comments are preserved. Create one with `bump init`
-- **Easy Build System Integration**: Define in _one place_ and use everywhere with `bump --print`
+- **Easy Build System Integration**: Define in _one place_ and use everywhere with `bump --print`, `bump --print-base`, or `bump --print-with-timestamp`
 - **Semantic Versioning**: Full support for `--major`, `--minor`, `--patch`, `--candidate`, and `--release` bumps with configurable promotion strategies
-- **Calendar Versioning**: Date-based versions with strftime format patterns (e.g., `v2026.02.25`) and automatic conflict resolution
+- **Calendar Versioning**: Date-based versions with strftime format patterns (e.g., `2026.02.25`) and automatic conflict resolution via `--calendar`
 - **Multi-Language Support**: Generate version files for C, Go, Java, C#, and Python - useful for injecting version strings into binaries
-- **Git Integration**: Automatic SHA appending for untagged commits, branch detection, and smart tag conflict handling
+- **Git Integration**: Automatic SHA appending for untagged commits, branch detection, smart tag conflict handling, and tag creation with custom messages
+- **File Updates**: Automatically update versions in known file types (e.g., `Cargo.toml`)
 - **Flexible Output**: Support for multiple output files from a single `bump.toml`
 - **Comment Preservation**: All comments and formatting in your TOML file are preserved across updates
 
@@ -194,18 +195,33 @@ delimiter = "-"
 
 ## Commands
 
+### Global Options
+
+All commands support the following global options:
+
+- **BUMPFILE** (positional, default: `bump.toml`): Path to the bumpfile to read version from (specified at the end)
+  - Example: `bump --print custom.toml`
+  - Example: `bump init config/version.toml`
+- **--prefix PREFIX**: Override the prefix for version tags (e.g., 'v', 'release-', or empty string '')
+
 ### Basic Commands
 
 ```bash
 # Initialize a new bump.toml file (defaults to SemVer)
-bump init [bump.toml]
+bump init [BUMPFILE]
+bump init --prefix "v" [BUMPFILE]  # With custom prefix
 
 # Initialize with CalVer instead
-bump init --calver [bump.toml]
+bump init --calver [BUMPFILE]
+
+# Use a custom bumpfile location (works with any command)
+bump init custom.toml
+bump --print custom.toml
 
 # Print current version
-bump --print [bump.toml]      # Full version with suffixes
-bump --print-base [bump.toml] # Base version only
+bump --print [BUMPFILE]                    # Full version with suffixes
+bump --print-base [BUMPFILE]               # Base version only (no candidate suffix)
+bump --print-with-timestamp [BUMPFILE]     # Version with build timestamp
 ```
 
 ### SemVer Commands
@@ -217,13 +233,15 @@ bump --minor     # 1.0.0 -> 1.1.0
 bump --patch     # 1.0.0 -> 1.0.1
 bump --candidate # 1.0.0 -> 1.1.0-rc1 (or increment rc if already candidate)
 bump --release   # 1.1.0-rc1 -> 1.1.0 (promote candidate to release)
+
+bump --prefix "release-" --major [BUMPFILE]  # Uses "release-" instead of configured prefix
 ```
 
 ### CalVer Commands
 
 ```bash
 # CalVer versions are automatically generated from the current date
-bump --calendar  # Updates to current date (e.g., 2026.02.25)
+bump --calendar [BUMPFILE]  # Updates to current date (e.g., 2026.02.25)
 
 # If same date already in version section:
 # - With "suffix" resolution: 2026.02.25-1, 2026.02.25-2, etc.
@@ -234,14 +252,17 @@ bump --calendar  # Updates to current date (e.g., 2026.02.25)
 
 ```bash
 # Generate version files for different languages
-bump gen --lang=c version.h
-bump gen --lang=go version.go
-bump gen --lang=java Version.java
-bump gen --lang=csharp Version.cs
-bump gen --lang=python version.py
+bump gen --lang=c --output version.h [BUMPFILE]
+bump gen --lang=go --output version.go [BUMPFILE]
+bump gen --lang=java --output Version.java [BUMPFILE]
+bump gen --lang=csharp --output Version.cs [BUMPFILE]
+bump gen --lang=python --output version.py [BUMPFILE]
 
 # Generate multiple files at once
-bump gen --lang=c -f bump.toml version.h include/version.h
+bump gen --lang=c --output version.h --output include/version.h [BUMPFILE]
+
+# Use custom bumpfile
+bump gen --lang=c --output version.h custom.toml
 
 # SemVer generates: VERSION, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, etc.
 # CalVer generates: VERSION_STRING only (simplified for date-based versions)
@@ -251,7 +272,11 @@ bump gen --lang=c -f bump.toml version.h include/version.h
 
 ```bash
 # Create a git tag for the current version
-bump tag
+bump tag [BUMPFILE]
+
+# Create a tag with custom message
+bump tag --message "Release v1.2.3 - Critical security fix" [BUMPFILE]
+bump tag -m "Custom message" [BUMPFILE]
 
 # Commit and tag in one step
 bump --minor
@@ -270,7 +295,7 @@ For traditional semantic versioning with candidates:
 bump init
 
 # Develop with automatic git SHA suffixes
-bump gen --lang=c version.h  # Generates: 0.0.0+a1b2c3d (untagged)
+bump gen --lang=c --output version.h  # Generates: 0.0.0+a1b2c3d (untagged)
 
 # Create a release candidate
 bump --candidate              # 0.0.0 -> 0.1.0-rc1
@@ -288,8 +313,8 @@ git commit -am "Release $(bump -p)"
 bump tag
 
 # Generate final version files (detects tag, no SHA)
-bump gen --lang=c version.h
-bump gen --lang=go version.go
+bump gen --lang=c --output version.h
+bump gen --lang=go --output version.go
 # Build and deploy...
 ```
 
@@ -305,19 +330,29 @@ bump init --calver
 bump --calendar               # Generates: 2026.02.25
 git commit -am "Release $(bump -p)"
 bump tag
-bump gen --lang=python version.py
+bump gen --lang=python --output version.py
 # Build and deploy...
 
 # Multiple releases same day? Automatic suffix handling:
 bump --calendar               # 2026.02.25-1
 git commit -am "Hotfix $(bump -p)"
 bump tag
-bump gen --lang=python version.py
+bump gen --lang=python --output version.py
 # Build and deploy...
 ```
 
 **PRO TIP**: Add generated version files to `.gitignore` to avoid "behind by one" issues
 
+### File Updates
+
+```bash
+# Update version in known file types (currently supports Cargo.toml)
+bump update Cargo.toml [BUMPFILE]
+
+# This reads version from bump.toml and updates it in Cargo.toml
+# Use with custom bumpfile
+bump update Cargo.toml custom.toml
+```
 
 ## Version Scheme Comparison
 
