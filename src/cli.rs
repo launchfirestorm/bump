@@ -6,8 +6,6 @@ pub fn cli() -> Command {
         .about("Automatic version bumping with sane defaults")
         .arg(
             Arg::new("bumpfile")
-                .short('f')
-                .long("file")
                 .value_name("BUMPFILE")
                 .value_parser(clap::value_parser!(String))
                 .default_value("bump.toml")
@@ -47,7 +45,9 @@ pub fn cli() -> Command {
                 )
                 .arg(
                     Arg::new("output")
-                        .value_name("output")
+                        .short('o')
+                        .long("output")
+                        .value_name("OUTPUT")
                         .value_parser(clap::value_parser!(String))
                         .action(clap::ArgAction::Append)
                         .required(true)
