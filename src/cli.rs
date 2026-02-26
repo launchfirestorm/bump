@@ -151,4 +151,12 @@ pub fn cli() -> Command {
                 .group("candidate-release")
                 .conflicts_with_all(["point-release", "print-group"])
         )
+        .arg(
+            Arg::new("calendar")
+                .long("calendar")
+                .action(clap::ArgAction::SetTrue)
+                .help("Update to current date (CalVer only)")
+                .group("calendar-release")
+                .conflicts_with_all(["point-release", "candidate-release", "meta", "print-group"])
+        )
 }

@@ -59,6 +59,7 @@ fn main() -> ExitCode {
                 ExitCode::SUCCESS
             } else if matches.contains_id("point-release")
                 || matches.contains_id("candidate-release")
+                || matches.contains_id("calendar-release")
                 || matches.get_one::<String>("prefix").is_some()
             {
                 egress(bump::apply(&matches))

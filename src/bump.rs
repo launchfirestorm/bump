@@ -33,6 +33,7 @@ pub enum BumpType {
     Point(PointType),
     Candidate, // candidate will bump the minor version and append a rc1
     Release,   // release will drop candidacy and not increment (hence released)
+    Calendar,  // calendar will update to current date (CalVer only)
     Base,
 }
 
@@ -158,6 +159,8 @@ pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
         Ok(BumpType::Candidate)
     } else if matches.get_flag("release") {
         Ok(BumpType::Release)
+    } else if matches.get_flag("calendar") {
+        Ok(BumpType::Calendar)
     } else {
         Err(BumpError::LogicError(
             "No valid bump type specified".to_string(),
@@ -243,7 +246,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     match (&version.version_type, &bump_type) {
         (VersionType::CalVer { .. }, BumpType::Point(_)) => {
             return Err(BumpError::LogicError(
-                "CalVer does not support major/minor/patch bumps. Use 'bump' without arguments to regenerate date-based version.".to_string()
+                "CalVer does not support major/minor/patch bumps. Use 'bump --calendar' to update to current date.".to_string()
             ));
         }
         (VersionType::CalVer { .. }, BumpType::Candidate) => {
@@ -254,6 +257,16 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         (VersionType::CalVer { .. }, BumpType::Release) => {
             return Err(BumpError::LogicError(
                 "CalVer does not support release bumps.".to_string()
+            ));
+        }
+        (VersionType::CalVer { .. }, BumpType::Prefix(_)) => {
+            return Err(BumpError::LogicError(
+                "CalVer does not support prefix changes after initialization.".to_string()
+            ));
+        }
+        (VersionType::SemVer { .. }, BumpType::Calendar) => {
+            return Err(BumpError::LogicError(
+                "SemVer does not support --calendar bump. Use --major, --minor, --patch, --candidate, or --release.".to_string()
             ));
         }
         _ => {} // Valid combination
@@ -280,6 +293,11 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
             ),
             BumpType::Release => println!(
                 "Bumped '{}' drop candidacy to release! {}",
+                version.path.display(),
+                version.to_string(&bump_type)
+            ),
+            BumpType::Calendar => println!(
+                "Bumped '{}' to calendar version {}",
                 version.path.display(),
                 version.to_string(&bump_type)
             ),
@@ -428,12 +446,28 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         VersionType::CalVer { suffix } => {
             match &version.config {
                 Config::CalVer(calver_config) => {
-                    let now = chrono::Utc::now();
-                    let date_str = now.format(&calver_config.format).to_string();
+                    // Build version from stored components
+                    let mut parts = vec![calver_config.version.year.clone()];
+                    
+                    if let Some(ref month) = calver_config.version.month {
+                        parts.push(month.clone());
+                    }
+                    if let Some(ref day) = calver_config.version.day {
+                        parts.push(day.clone());
+                    }
+                    if let Some(minor) = calver_config.version.minor {
+                        parts.push(minor.to_string());
+                    }
+                    if let Some(micro) = calver_config.version.micro {
+                        parts.push(micro.to_string());
+                    }
+                    
+                    let version_str = parts.join(&calver_config.format.delimiter);
+                    
                     if *suffix > 0 {
-                        format!("{}{}{}{}", version.prefix, date_str, calver_config.conflict.delimiter, suffix)
+                        format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, suffix)
                     } else {
-                        format!("{}{}", version.prefix, date_str)
+                        format!("{}{}", calver_config.format.prefix, version_str)
                     }
                 }
                 _ => unreachable!("CalVer version type must have CalVer config"),
