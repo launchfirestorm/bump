@@ -91,9 +91,10 @@ Bump uses a TOML configuration file (`bump.toml`) to manage versioning settings.
 #
 # https://github.com/launchfirestorm/bump
 
-[semver]
+[semver.format]
 prefix = "v"
-timestamp = "%Y-%m-%d %H:%M:%S %Z"   # optional: strftime syntax for build timestamp
+delimiter = "."
+timestamp = "%Y-%m-%d %H:%M:%S %Z"   # [optional] strftime syntax for build timestamp
 
 # NOTE: This section is modified by the bump command
 [semver.version]
@@ -129,13 +130,28 @@ delimiter = "+"
 #
 # https://github.com/launchfirestorm/bump
 
-[calver]
+# format will drive version section below
+# - remove optional fields to change format
+# - for minor|micro, setting to false is the same as removing
+[calver.format]
 prefix = ""
-format = "%Y.%m.%d"   # strftime date format
+delimiter = "."
+year = "%Y"        # strftime 4 digit year
+month = "%m"       # [optional] strftime zero padded month
+day = "%d"         # [optional] strftime zero padded day
+minor = false      # [optional] minor version number
+micro = false      # [optional] micro version number
 
-# Conflict resolution when version matches existing git tag:
-#  - "suffix"    : append numeric suffix (e.g., 2024.02.25-1)
+# NOTE: This section is modified by the bump command
+[calver.version]
+year = "2026"
+month = "02"
+day = "25"
+
+# Conflict resolution when same date matches existing version:
+#  - "suffix"    : append numeric suffix (e.g., 2026.02.25-1)
 #  - "overwrite" : reuse the same version
+# NOTE: suffix is modified by the bump command
 [calver.conflict]
 resolution = "suffix"
 suffix = 0
@@ -146,8 +162,10 @@ delimiter = "-"
 
 #### SemVer Options
 
-- **`prefix`**: Version tag prefix (e.g., "v", "release-", or empty string)
-- **`timestamp`**: strftime format string for timestamps in generated files (optional)
+- **`[semver.format]`**:
+  - `prefix`: Version tag prefix (e.g., "v", "release-", or empty string)
+  - `delimiter`: Separator between version components (default: ".")
+  - `timestamp`: strftime format string for timestamps in generated files (optional)
 - **`[semver.version]`**: Current version numbers (automatically updated by bump commands)
 - **`[semver.candidate]`**: 
   - `promotion`: Which version component to bump when promoting candidates ("minor", "major", or "patch")
@@ -158,8 +176,15 @@ delimiter = "-"
 
 #### CalVer Options
 
-- **`prefix`**: Version tag prefix (e.g., "v", "release-", or empty string)
-- **`format`**: strftime format pattern for date-based versions (e.g., "%Y.%m.%d" → "2026.02.25")
+- **`[calver.format]`**:
+  - `prefix`: Version tag prefix (e.g., "v", "release-", or empty string)
+  - `delimiter`: Separator between date components (default: ".")
+  - `year`: strftime format for year (e.g., "%Y" for 4-digit year)
+  - `month`: strftime format for month (optional, e.g., "%m" for zero-padded month)
+  - `day`: strftime format for day (optional, e.g., "%d" for zero-padded day)
+  - `minor`: Include minor version number (optional, boolean)
+  - `micro`: Include micro version number (optional, boolean)
+- **`[calver.version]`**: Current date components (automatically updated by bump --calendar command)
 - **`[calver.conflict]`**: 
   - `resolution`: How to handle same-day version conflicts ("suffix" or "overwrite")
   - `suffix`: Current suffix number (automatically incremented when conflicts detected)
@@ -198,11 +223,11 @@ bump --release   # 1.1.0-rc1 -> 1.1.0 (promote candidate to release)
 
 ```bash
 # CalVer versions are automatically generated from the current date
-bump             # Updates to current date (e.g., v2026.02.25)
+bump --calendar  # Updates to current date (e.g., 2026.02.25)
 
-# If version already exists as git tag:
-# - With "suffix" resolution: v2026.02.25-1, v2026.02.25-2, etc.
-# - With "overwrite" resolution: reuses v2026.02.25
+# If same date already in version section:
+# - With "suffix" resolution: 2026.02.25-1, 2026.02.25-2, etc.
+# - With "overwrite" resolution: reuses 2026.02.25
 ```
 
 ### Code Generation
@@ -277,14 +302,14 @@ For date-based versioning ideal for continuous deployment:
 bump init --calver
 
 # Each day gets a new version automatically
-bump                          # Generates: v2026.02.25
+bump --calendar               # Generates: 2026.02.25
 git commit -am "Release $(bump -p)"
 bump tag
 bump gen --lang=python version.py
 # Build and deploy...
 
 # Multiple releases same day? Automatic suffix handling:
-bump                          # v2026.02.25-1
+bump --calendar               # 2026.02.25-1
 git commit -am "Hotfix $(bump -p)"
 bump tag
 bump gen --lang=python version.py
@@ -299,9 +324,9 @@ bump gen --lang=python version.py
 | Feature | SemVer | CalVer |
 |---------|--------|--------|
 | **Format** | major.minor.patch | Customizable date format |
-| **Example** | v1.2.3, v1.2.0-rc1 | v2026.02.25, v2026.02.25-1 |
+| **Example** | v1.2.3, v1.2.0-rc1 | 2026.02.25, 2026.02.25-1 |
 | **Best For** | Libraries, APIs, traditional releases | SaaS, continuous deployment |
-| **Bumping** | Explicit (--major, --minor, --patch) | Automatic (current date) |
+| **Bumping** | --major, --minor, --patch | --calendar |
 | **Candidates** | Yes (--candidate, --release) | No (use suffix for same-day releases) |
 | **Generated Code** | All version components | VERSION_STRING only |
 | **Conflict Resolution** | N/A | Automatic suffix increment or overwrite |
