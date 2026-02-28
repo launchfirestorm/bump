@@ -365,12 +365,7 @@ pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> 
     Ok(())
 }
 
-pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpError> {
-    if !is_git_repository() {
-        return Err(BumpError::LogicError("Not in a git repository".to_string()));
-    }
-
-    // Create the conventional tag name based on version
+pub fn build_tag_name(version: &Version) -> Result<String, BumpError> {
     let tag_name = match &version.version_type {
         VersionType::SemVer { major, minor, patch, candidate } => {
             match &version.config {
@@ -395,43 +390,41 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
                 _ => unreachable!("SemVer version type must have SemVer config"),
             }
         }
-        VersionType::CalVer { revision } => {
-            match &version.config {
-                Config::CalVer(calver_config) => {
-                    // Build version from stored components
-                    let mut parts = vec![calver_config.version.year.clone()];
-                    
-                    if let Some(ref month) = calver_config.version.month {
-                        parts.push(month.clone());
-                    }
-                    if let Some(ref day) = calver_config.version.day {
-                        parts.push(day.clone());
-                    }
-                    
-                    let version_str = parts.join(&calver_config.format.delimiter);
-                    
-                    // Only show revision if > 0
-                    if *revision > 0 {
-                        format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, revision)
-                    } else {
-                        format!("{}{}", calver_config.format.prefix, version_str)
-                    }
-                }
-                _ => unreachable!("CalVer version type must have CalVer config"),
-            }
-        }
+        VersionType::CalVer { .. } => version.fully_qualified_string()?,
     };
 
-    // Check if the tag already exists
-    let tag_exists = ProcessCommand::new("git")
-        .args(["tag", "-l", &tag_name])
+    Ok(tag_name)
+}
+
+fn git_tag_exists(tag_name: &str) -> Result<bool, BumpError> {
+    let mut cmd = ProcessCommand::new("git");
+
+    #[cfg(test)]
+    {
+        TEST_REPO_PATH.with(|p| {
+            if let Some(ref path) = *p.borrow() {
+                cmd.arg("-C").arg(path);
+            }
+        });
+    }
+
+    let output = cmd
+        .args(["rev-parse", "-q", "--verify", &format!("refs/tags/{}", tag_name)])
         .output()
         .map_err(|e| BumpError::Git(format!("failed to check if tag exists: {e}")))?;
 
-    if !String::from_utf8_lossy(&tag_exists.stdout)
-        .trim()
-        .is_empty()
-    {
+    Ok(output.status.success())
+}
+
+pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), BumpError> {
+    if !is_git_repository() {
+        return Err(BumpError::LogicError("Not in a git repository".to_string()));
+    }
+
+    let tag_name = build_tag_name(version)?;
+
+    // Check if the tag already exists
+    if git_tag_exists(&tag_name)? {
         return Err(BumpError::Git(format!("Tag '{tag_name}' already exists")));
     }
 
