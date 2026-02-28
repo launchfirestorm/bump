@@ -502,3 +502,59 @@ delimiter = "-"
     assert!(updated_content.contains("# [optional] strftime zero padded month"));
     assert!(updated_content.contains("# [optional] strftime zero padded day"));
 }
+
+#[test]
+fn test_build_tag_name_calver_uses_full_version_string() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    let content = r#"[calver.format]
+prefix = ""
+delimiter = "."
+year = "%Y"
+month = "%m"
+day = "%d"
+
+[calver.version]
+year = "2026"
+month = "02"
+day = "28"
+
+[calver.conflict]
+revision = 1
+delimiter = "-"
+"#;
+    fs::write(&config_path, content).unwrap();
+
+    let version = Version::from_file(&config_path).unwrap();
+    let tag_name = crate::bump::build_tag_name(&version).unwrap();
+
+    assert_eq!(tag_name, "2026.02.28-1");
+}
+
+#[test]
+fn test_build_tag_name_calver_respects_custom_format_and_delimiters() {
+    let temp_dir = TempDir::new().unwrap();
+    let config_path = temp_dir.path().join("bump.toml");
+
+    let content = r#"[calver.format]
+prefix = "release_"
+delimiter = "-"
+year = "%Y"
+month = "%m"
+
+[calver.version]
+year = "2026"
+month = "02"
+
+[calver.conflict]
+revision = 3
+delimiter = "."
+"#;
+    fs::write(&config_path, content).unwrap();
+
+    let version = Version::from_file(&config_path).unwrap();
+    let tag_name = crate::bump::build_tag_name(&version).unwrap();
+
+    assert_eq!(tag_name, "release_2026-02.3");
+}
