@@ -5,16 +5,20 @@ use crate::bump::{
     is_git_repository,
     resolve_path,
 };
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs, io,
-    path::{Path, PathBuf},
+    fs, io, path::{Path, PathBuf}
 };
 use toml_edit::{DocumentMut, value};
 
+//   _________            ____   ____            
+//  /   _____/ ____   ____\   \ /   /___________ 
+//  \_____  \_/ __ \ /     \   Y   // __ \_  __ \
+//  /        \  ___/|  Y Y  \     /\  ___/|  | \/
+// /_______  /\___  >__|_|  /\___/  \___  >__|   
+//         \/     \/      \/            \/       
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemVerFormatSection {
+pub struct SemVerFormat {
     pub prefix: String,
     pub delimiter: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -22,7 +26,7 @@ pub struct SemVerFormatSection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemVerVersionSection {
+pub struct SemVerVersion {
     pub major: u32,
     pub minor: u32,
     pub patch: u32,
@@ -30,35 +34,33 @@ pub struct SemVerVersionSection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CandidateSection {
+pub struct SemverCandidate {
     pub promotion: String, // "minor", "major", "patch"
     pub delimiter: String, // "-rc"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DevelopmentSection {
+pub struct SemVerDevelopment {
     pub promotion: String, // "git_sha", "branch", "full"
     pub delimiter: String, // "+"
 }
 
-// SemVer Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SemVerConfig {
-    pub format: SemVerFormatSection,
-    pub version: SemVerVersionSection,
-    pub candidate: CandidateSection,
-    pub development: DevelopmentSection,
+pub struct SemVer {
+    pub format: SemVerFormat,
+    pub version: SemVerVersion,
+    pub candidate: SemverCandidate,
+    pub development: SemVerDevelopment,
 }
 
-// CalVer Structures
+// _________        .______   ____            
+// \_   ___ \_____  |  \   \ /   /___________ 
+// /    \  \/\__  \ |  |\   Y   // __ \_  __ \
+// \     \____/ __ \|  |_\     /\  ___/|  | \/
+//  \______  (____  /____/\___/  \___  >__|   
+//         \/     \/                 \/       
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalVerConflictSection {
-    pub revision: u32,
-    pub delimiter: String, // "-"
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalVerFormatSection {
+pub struct CalVerFormat {
     pub prefix: String,
     pub delimiter: String,
     pub year: String,          // e.g., "%Y"
@@ -69,147 +71,131 @@ pub struct CalVerFormatSection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalVerVersionSection {
-    pub year: String,           // e.g., "2026"
+pub struct CalVerConflict {
+    pub revision: u32,
+    pub delimiter: String,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalVerVersion {
+    pub year: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub month: Option<String>,  // e.g., "02"
+    pub month: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub day: Option<String>,    // e.g., "25"
+    pub day: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalVerConfig {
-    pub format: CalVerFormatSection,
-    pub version: CalVerVersionSection,
-    pub conflict: CalVerConflictSection,
+pub struct CalVer {
+    pub format: CalVerFormat,
+    pub version: CalVerVersion,
+    pub conflict: CalVerConflict,
 }
 
-// Configuration enum - either SemVer or CalVer
-#[derive(Debug, Clone)]
-pub enum Config {
-    SemVer(SemVerConfig),
-    CalVer(CalVerConfig),
-}
 
 // Wrapper for TOML parsing - has [semver] section
 #[derive(Debug, Deserialize)]
 struct SemVerToml {
-    semver: SemVerConfig,
+    semver: SemVer,
 }
 
 // Wrapper for TOML parsing - has [calver] section
 #[derive(Debug, Deserialize)]
 struct CalVerToml {
-    calver: CalVerConfig,
+    calver: CalVer,
 }
 
-pub(crate) fn default_semver_config(
-    prefix: String,
+pub fn default_semver(
+    prefix: &str,
     major: u32,
     minor: u32,
     patch: u32,
     candidate: u32,
-) -> Config {
-    Config::SemVer(SemVerConfig {
-        format: SemVerFormatSection {
-            prefix,
+) -> SemVer {
+    SemVer {
+        format: SemVerFormat {
+            prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             timestamp: Some("%Y-%m-%d %H:%M:%S %Z".to_string()),
         },
-        version: SemVerVersionSection {
+        version: SemVerVersion {
             major,
             minor,
             patch,
             candidate,
         },
-        candidate: CandidateSection {
+        candidate: SemverCandidate {
             promotion: "minor".to_string(),
             delimiter: "-rc".to_string(),
         },
-        development: DevelopmentSection {
+        development: SemVerDevelopment {
             promotion: "git_sha".to_string(),
             delimiter: "+".to_string(),
         },
-    })
+    }
 }
 
-pub(crate) fn default_calver_config(prefix: String) -> Config {
+pub fn default_calver(prefix: &str) -> CalVer {
     let now = chrono::Utc::now();
-    Config::CalVer(CalVerConfig {
-        format: CalVerFormatSection {
-            prefix,
+    CalVer {
+        format: CalVerFormat {
+            prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             year: "%Y".to_string(),
             month: Some("%m".to_string()),
             day: Some("%d".to_string()),
         },
-        version: CalVerVersionSection {
+        version: CalVerVersion {
             year: now.format("%Y").to_string(),
             month: Some(now.format("%m").to_string()),
             day: Some(now.format("%d").to_string()),
         },
-        conflict: CalVerConflictSection {
+        conflict: CalVerConflict {
             revision: 0,
             delimiter: "-".to_string(),
         },
-    })
+    }
 }
 
 // Version data - either SemVer or CalVer
 #[derive(Debug, Clone)]
 pub enum VersionType {
-    SemVer {
-        major: u32,
-        minor: u32,
-        patch: u32,
-        candidate: u32,
-    },
-    CalVer {
-        revision: u32,
-    },
+    SemVer(SemVer),
+    CalVer(CalVer),
 }
 
 #[derive(Debug)]
 pub struct Version {
-    pub prefix: String,
-    pub timestamp: Option<String>,
     pub version_type: VersionType,
     pub path: PathBuf,
-    pub config: Config,
-}
-
-fn get_time(format: &Option<String>) -> Option<String> {
-    let now = chrono::Utc::now();
-    format.as_ref().map(|fmt| now.format(fmt).to_string())
 }
 
 impl Version {
-    pub fn default(path: &Path) -> Self {
-        let config = default_semver_config("v".to_string(), 0, 1, 0, 0);
-
-        match &config {
-            Config::SemVer(semver_config) => Version {
-                prefix: semver_config.format.prefix.clone(),
-                timestamp: None,
-                version_type: VersionType::SemVer {
-                    major: semver_config.version.major,
-                    minor: semver_config.version.minor,
-                    patch: semver_config.version.patch,
-                    candidate: semver_config.version.candidate,
-                },
-                path: path.to_path_buf(),
-                config,
-            },
-            Config::CalVer(_) => unreachable!("default should use SemVer"),
-        }
-    }
-
     pub fn from_argmatches(matches: &clap::ArgMatches) -> Result<Self, BumpError> {
         let bumpfile = matches
             .get_one::<String>("bumpfile")
             .expect("bumpfile not provided");
         let path = resolve_path(bumpfile);
         Version::from_file(&path)
+    }
+
+    pub fn get_timestamp(&self) -> Result<String, BumpError> {
+        match &self.version_type {
+            VersionType::SemVer ( semver ) => {
+                let now = chrono::Utc::now();
+                let timestamp = match semver.format.timestamp.as_ref() {
+                    Some(fmt) => now.format(fmt).to_string(),
+                    None => return Err(BumpError::LogicError("Timestamp format not specified".to_string())),
+                };
+                Ok(timestamp)
+            },
+            VersionType::CalVer (_) => {
+                Err(BumpError::LogicError(
+                    "You are using calendar versioning! --print-with-timestamp is redundant.".to_string()
+                ))
+            }
+        }
     }
 
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
@@ -244,66 +230,51 @@ impl Version {
         }
 
         if has_semver {
-            // Parse SemVer config
             let semver_toml: SemVerToml = toml::from_str(&content)?;
-            let semver_config = semver_toml.semver;
+            let semver = semver_toml.semver;
 
             // Validate development promotion strategy
-            match semver_config.development.promotion.as_str() {
+            match semver.development.promotion.as_str() {
                 "git_sha" | "branch" | "full" => (),
                 _ => {
                     println!(
                         "invalid development promotion strategy: {}",
-                        semver_config.development.promotion
+                        semver.development.promotion
                     );
                     println!("defaulting to git_sha");
                 }
             }
 
             // Validate candidate promotion strategy
-            match semver_config.candidate.promotion.as_str() {
+            match semver.candidate.promotion.as_str() {
                 "minor" | "major" | "patch" => (),
                 _ => {
                     println!(
                         "invalid candidate promotion strategy: {}",
-                        semver_config.candidate.promotion
+                        semver.candidate.promotion
                     );
                     println!("defaulting to minor");
                 }
             }
 
             Ok(Version {
-                prefix: semver_config.format.prefix.clone(),
-                timestamp: get_time(&semver_config.format.timestamp),
-                version_type: VersionType::SemVer {
-                    major: semver_config.version.major,
-                    minor: semver_config.version.minor,
-                    patch: semver_config.version.patch,
-                    candidate: semver_config.version.candidate,
-                },
+                version_type: VersionType::SemVer(semver),
                 path: path.to_path_buf(),
-                config: Config::SemVer(semver_config),
             })
         } else {
-            // Parse CalVer config
             let calver_toml: CalVerToml = toml::from_str(&content)?;
-            let calver_config = calver_toml.calver;
+            let calver = calver_toml.calver;
 
             Ok(Version {
-                prefix: calver_config.format.prefix.clone(),
-                timestamp: None, // CalVer doesn't use separate timestamp
-                version_type: VersionType::CalVer {
-                    revision: calver_config.conflict.revision,
-                },
+                version_type: VersionType::CalVer(calver),
                 path: path.to_path_buf(),
-                config: Config::CalVer(calver_config),
             })
         }
     }
 
     pub fn file_init(&self) -> Result<(), BumpError> {
-        let contents = match &self.config {
-            Config::SemVer(semver_config) => {
+        let contents = match &self.version_type {
+            VersionType::SemVer(semver) => {
                 format!(
                     r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
@@ -340,20 +311,20 @@ delimiter = "{}"
 promotion = "{}"
 delimiter = "{}"
 "#,
-                    semver_config.format.prefix,
-                    semver_config.format.delimiter,
-                    semver_config.format.timestamp.as_deref().unwrap_or("%Y-%m-%d %H:%M:%S %Z"),
-                    semver_config.version.major,
-                    semver_config.version.minor,
-                    semver_config.version.patch,
-                    semver_config.version.candidate,
-                    semver_config.candidate.promotion,
-                    semver_config.candidate.delimiter,
-                    semver_config.development.promotion,
-                    semver_config.development.delimiter,
+                    semver.format.prefix,
+                    semver.format.delimiter,
+                    semver.format.timestamp.as_deref().unwrap_or("%Y-%m-%d %H:%M:%S %Z"),
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch,
+                    semver.version.candidate,
+                    semver.candidate.promotion,
+                    semver.candidate.delimiter,
+                    semver.development.promotion,
+                    semver.development.delimiter,
                 )
             }
-            Config::CalVer(calver_config) => {
+            VersionType::CalVer(calver) => {
                 format!(
                     r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
@@ -384,15 +355,15 @@ day = "{}"
 revision = {}
 delimiter = "{}"
 "#,
-                    calver_config.format.delimiter,
-                    calver_config.format.year,
-                    calver_config.format.month.as_deref().unwrap_or("%m"),
-                    calver_config.format.day.as_deref().unwrap_or("%d"),
-                    calver_config.version.year,
-                    calver_config.version.month.as_deref().unwrap_or("01"),
-                    calver_config.version.day.as_deref().unwrap_or("01"),
-                    calver_config.conflict.revision,
-                    calver_config.conflict.delimiter,
+                    calver.format.delimiter,
+                    calver.format.year,
+                    calver.format.month.as_deref().unwrap_or("%m"),
+                    calver.format.day.as_deref().unwrap_or("%d"),
+                    calver.version.year,
+                    calver.version.month.as_deref().unwrap_or("01"),
+                    calver.version.day.as_deref().unwrap_or("01"),
+                    calver.conflict.revision,
+                    calver.conflict.delimiter,
                 )
             }
         };
@@ -413,37 +384,30 @@ delimiter = "{}"
             .parse::<DocumentMut>()
             .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {}", e)))?;
 
-        match (&self.version_type, &self.config) {
-            (VersionType::SemVer { major, minor, patch, candidate }, Config::SemVer(semver_config)) => {
+        match &self.version_type {
+            VersionType::SemVer ( semver) => {
                 // Update SemVer format section
-                doc["semver"]["format"]["prefix"] = value(&semver_config.format.prefix);
-                doc["semver"]["format"]["delimiter"] = value(&semver_config.format.delimiter);
-                if let Some(ref timestamp) = semver_config.format.timestamp {
+                doc["semver"]["format"]["prefix"] = value(&semver.format.prefix);
+                doc["semver"]["format"]["delimiter"] = value(&semver.format.delimiter);
+                if let Some(ref timestamp) = semver.format.timestamp {
                     doc["semver"]["format"]["timestamp"] = value(timestamp);
                 }
                 
-                // Update SemVer version section
-                doc["semver"]["version"]["major"] = value(*major as i64);
-                doc["semver"]["version"]["minor"] = value(*minor as i64);
-                doc["semver"]["version"]["patch"] = value(*patch as i64);
-                doc["semver"]["version"]["candidate"] = value(*candidate as i64);
-
-                // Update candidate section
-                doc["semver"]["candidate"]["promotion"] = value(&semver_config.candidate.promotion);
-                doc["semver"]["candidate"]["delimiter"] = value(&semver_config.candidate.delimiter);
-
-                // Update development section
-                doc["semver"]["development"]["promotion"] = value(&semver_config.development.promotion);
-                doc["semver"]["development"]["delimiter"] = value(&semver_config.development.delimiter);
+                doc["semver"]["version"]["major"] = value(semver.version.major as i64);
+                doc["semver"]["version"]["minor"] = value(semver.version.minor as i64);
+                doc["semver"]["version"]["patch"] = value(semver.version.patch as i64);
+                doc["semver"]["version"]["candidate"] = value(semver.version.candidate as i64);
+                doc["semver"]["candidate"]["promotion"] = value(&semver.candidate.promotion);
+                doc["semver"]["candidate"]["delimiter"] = value(&semver.candidate.delimiter);
+                doc["semver"]["development"]["promotion"] = value(&semver.development.promotion);
+                doc["semver"]["development"]["delimiter"] = value(&semver.development.delimiter);
             }
-            (VersionType::CalVer { revision }, Config::CalVer(calver_config)) => {
+            VersionType::CalVer ( calver) => {
                 // NOTE: We don't touch the format section - it's static configuration
                 // Only the version section and revision are modified during bumps
+                doc["calver"]["version"]["year"] = value(&calver.version.year);
                 
-                // Update CalVer version section
-                doc["calver"]["version"]["year"] = value(&calver_config.version.year);
-                
-                if let Some(ref month) = calver_config.version.month {
+                if let Some(ref month) = calver.version.month {
                     doc["calver"]["version"]["month"] = value(month);
                 } else {
                     // Remove field if not present in config
@@ -451,7 +415,7 @@ delimiter = "{}"
                         table.remove("month");
                     }
                 }
-                if let Some(ref day) = calver_config.version.day {
+                if let Some(ref day) = calver.version.day {
                     doc["calver"]["version"]["day"] = value(day);
                 } else {
                     // Remove field if not present in config
@@ -460,11 +424,9 @@ delimiter = "{}"
                     }
                 }
                 
-                // Update CalVer conflict section
-                doc["calver"]["conflict"]["revision"] = value(*revision as i64);
-                doc["calver"]["conflict"]["delimiter"] = value(&calver_config.conflict.delimiter);
+                doc["calver"]["conflict"]["revision"] = value(calver.conflict.revision as i64);
+                doc["calver"]["conflict"]["delimiter"] = value(&calver.conflict.delimiter);
             }
-            _ => unreachable!("Version type and config mismatch"),
         }
 
         // Write the updated document back to file
@@ -474,307 +436,239 @@ delimiter = "{}"
         }
     }
 
-    pub fn to_string(&self, bump_type: &BumpType) -> String {
-        match &self.version_type {
-            VersionType::SemVer { major, minor, patch, candidate } => {
-                match &self.config {
-                    Config::SemVer(semver_config) => {
-                        let base = format!(
-                            "{}{}.{}.{}",
-                            self.prefix, major, minor, patch
-                        );
-                        let candidate_str = format!(
-                            "{}{}.{}.{}{}{}",
-                            self.prefix,
-                            major,
-                            minor,
-                            patch,
-                            semver_config.candidate.delimiter,
-                            candidate
-                        );
-                        match bump_type {
-                            BumpType::Prefix(_) | BumpType::Point(_) | BumpType::Release => base,
-                            BumpType::Candidate => candidate_str,
-                            // Useful for cmake and other tools
-                            BumpType::Base => format!("{}.{}.{}", major, minor, patch),
-                            BumpType::Calendar => base, // Shouldn't happen but return base
-                        }
-                    }
-                    _ => unreachable!("SemVer version type must have SemVer config"),
-                }
+    fn get_semver_string(semver: &SemVer) -> Result<String, BumpError> {
+        if !is_git_repository() {
+            // Not in a git repository - return base version without development suffix
+            if semver.version.candidate > 0 {
+                return Ok(format!(
+                    "{}{}.{}.{}{}{}",
+                    semver.format.prefix,
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch,
+                    semver.candidate.delimiter,
+                    semver.version.candidate
+                ));
+            } else {
+                return Ok(format!(
+                    "{}{}.{}.{}",
+                    semver.format.prefix, 
+                    semver.version.major, 
+                    semver.version.minor, 
+                    semver.version.patch
+                ));
             }
-            VersionType::CalVer { revision } => {
-                match &self.config {
-                    Config::CalVer(calver_config) => {
-                        // Build version from stored components
-                        let mut parts = vec![calver_config.version.year.clone()];
-                        
-                        if let Some(ref month) = calver_config.version.month {
-                            parts.push(month.clone());
-                        }
-                        if let Some(ref day) = calver_config.version.day {
-                            parts.push(day.clone());
-                        }
-                        
-                        let version_str = parts.join(&calver_config.format.delimiter);
-                        
-                        // Only show revision if > 0
-                        if *revision > 0 {
-                            format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, revision)
-                        } else {
-                            format!("{}{}", calver_config.format.prefix, version_str)
-                        }
-                    }
-                    _ => unreachable!("CalVer version type must have CalVer config"),
-                }
+        }
+
+        let tagged = get_git_tag(false).is_ok();
+        let base = format!(
+            "{}{}.{}.{}",
+            semver.format.prefix, semver.version.major, semver.version.minor, semver.version.patch
+        );
+        let candidate_str = format!(
+            "{}{}.{}.{}{}{}",
+            semver.format.prefix,
+            semver.version.major,
+            semver.version.minor,
+            semver.version.patch,
+            semver.candidate.delimiter,
+            semver.version.candidate
+        );
+
+        let version_string = match (tagged, semver.version.candidate) {
+            (true, 0) => base,
+            (true, _) => candidate_str,
+            (false, 0) => format!(
+                "{}{}{}",
+                base,
+                semver.development.delimiter,
+                get_development_suffix(&semver.development.promotion)?
+            ),
+            (false, _) => format!(
+                "{}{}{}",
+                candidate_str,
+                semver.development.delimiter,
+                get_development_suffix(&semver.development.promotion)?
+            ),
+        };
+
+        Ok(version_string)
+    }
+
+    fn get_calver_string(calver: &CalVer) -> Result<String, BumpError> {
+        // Build version from stored components
+        let mut parts = vec![calver.version.year.clone()];
+        
+        if let Some(ref month) = calver.version.month {
+            parts.push(month.clone());
+        }
+        if let Some(ref day) = calver.version.day {
+            parts.push(day.clone());
+        }
+        
+        let version_str = parts.join(&calver.format.delimiter);
+        
+        let base_version = format!("{}{}", calver.format.prefix, version_str);
+        
+        // Only show revision if > 0
+        if calver.conflict.revision > 0 {
+            Ok(format!(
+                "{}{}{}",
+                base_version,
+                calver.conflict.delimiter,
+                calver.conflict.revision
+            ))
+        } else {
+            Ok(base_version)
+        }
+    }
+
+    pub fn to_string(&self) -> Result<String, BumpError> {
+        match &self.version_type {
+            VersionType::SemVer ( semver ) => {
+                Version::get_semver_string(semver)
+            }
+            VersionType::CalVer ( calver ) => {
+                Version::get_calver_string(calver)
             }
         }
     }
 
-    pub fn fully_qualified_string(&self) -> Result<String, BumpError> {
+    // useful for CMake and other systems that want just MAJOR.MINOR.PATCH
+    pub fn to_base_string(&self) -> Result<String, BumpError> {
         match &self.version_type {
-            VersionType::SemVer { major, minor, patch, candidate } => {
-                match &self.config {
-                    Config::SemVer(semver_config) => {
-                        if !is_git_repository() {
-                            // Not in a git repository - return base version without development suffix
-                            if *candidate > 0 {
-                                return Ok(format!(
-                                    "{}{}.{}.{}{}{}",
-                                    self.prefix,
-                                    major,
-                                    minor,
-                                    patch,
-                                    semver_config.candidate.delimiter,
-                                    candidate
-                                ));
-                            } else {
-                                return Ok(format!(
-                                    "{}{}.{}.{}",
-                                    self.prefix, major, minor, patch
-                                ));
-                            }
-                        }
-
-                        let tagged = get_git_tag(false).is_ok();
-                        let base = format!(
-                            "{}{}.{}.{}",
-                            self.prefix, major, minor, patch
-                        );
-                        let candidate_str = format!(
-                            "{}{}.{}.{}{}{}",
-                            self.prefix,
-                            major,
-                            minor,
-                            patch,
-                            semver_config.candidate.delimiter,
-                            candidate
-                        );
-
-                        let version_string = match (tagged, *candidate) {
-                            (true, 0) => base,
-                            (true, _) => candidate_str,
-                            (false, 0) => format!(
-                                "{}{}{}",
-                                base,
-                                semver_config.development.delimiter,
-                                get_development_suffix(self)?
-                            ),
-                            (false, _) => format!(
-                                "{}{}{}",
-                                candidate_str,
-                                semver_config.development.delimiter,
-                                get_development_suffix(self)?
-                            ),
-                        };
-
-                        Ok(version_string)
-                    }
-                    _ => unreachable!("SemVer version type must have SemVer config"),
-                }
+            VersionType::SemVer ( semver ) => {
+                Ok(format!(
+                    "{}.{}.{}",
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch
+                ))
             }
-            VersionType::CalVer { revision } => {
-                match &self.config {
-                    Config::CalVer(calver_config) => {
-                        // Build version from stored components
-                        let mut parts = vec![calver_config.version.year.clone()];
-                        
-                        if let Some(ref month) = calver_config.version.month {
-                            parts.push(month.clone());
-                        }
-                        if let Some(ref day) = calver_config.version.day {
-                            parts.push(day.clone());
-                        }
-                        
-                        let version_str = parts.join(&calver_config.format.delimiter);
-                        
-                        // Only show revision if > 0
-                        if *revision > 0 {
-                            Ok(format!("{}{}{}{}", calver_config.format.prefix, version_str, calver_config.conflict.delimiter, revision))
-                        } else {
-                            Ok(format!("{}{}", calver_config.format.prefix, version_str))
-                        }
-                    }
-                    _ => unreachable!("CalVer version type must have CalVer config"),
-                }
+            VersionType::CalVer ( _ ) => {
+                Err(BumpError::LogicError(
+                    "base version only applies to semantic versioning".to_string()
+                )) 
             }
         }
     }
 
-    pub fn from_string(version_str: &str, path: &Path) -> Result<Self, BumpError> {
-        let re =
-            Regex::new(r"^(?P<prefix>[a-zA-Z]*)(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-rc(?P<candidate>\d+))?")
-                .unwrap();
-        let caps = re
-            .captures(version_str)
-            .ok_or_else(|| BumpError::ParseError("invalid version format".to_string()))?;
-
-        let prefix = caps
-            .name("prefix")
-            .map_or("v".to_string(), |m| m.as_str().to_string());
-        let major = caps["major"]
-            .parse()
-            .map_err(|_| BumpError::ParseError("invalid MAJOR value".to_string()))?;
-        let minor = caps["minor"]
-            .parse()
-            .map_err(|_| BumpError::ParseError("invalid MINOR value".to_string()))?;
-        let patch = caps["patch"]
-            .parse()
-            .map_err(|_| BumpError::ParseError("invalid PATCH value".to_string()))?;
-        let candidate = caps.name("candidate").map_or(Ok(0), |m| {
-            m.as_str()
-                .parse()
-                .map_err(|_| BumpError::ParseError("invalid CANDIDATE value".to_string()))
-        })?;
-
-        let config = default_semver_config(prefix.clone(), major, minor, patch, candidate);
-
-        Ok(Version {
-            prefix,
-            timestamp: None,
-            version_type: VersionType::SemVer {
-                major,
-                minor,
-                patch,
-                candidate,
-            },
-            path: path.to_path_buf(),
-            config,
-        })
+    // internal call to give `apply()` the version string without dev suffixes
+    pub fn to_root_string(&self) -> Result<String, BumpError> {
+        match &self.version_type {
+            VersionType::SemVer ( semver ) => {
+                Ok(format!(
+                    "{}{}.{}.{}",
+                    semver.format.prefix,
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch
+                ))
+            }
+            VersionType::CalVer ( calver ) => {
+                Version::get_calver_string(calver)
+            }
+        }
     }
 
     pub fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         match &mut self.version_type {
-            VersionType::SemVer { major, minor, patch, candidate } => {
-                match &self.config {
-                    Config::SemVer(semver_config) => {
-                        self.timestamp = get_time(&semver_config.format.timestamp);
-                        
-                        match bump_type {
-                            BumpType::Prefix(prefix) => {
-                                self.prefix = prefix.clone();
-                            }
-                            BumpType::Point(PointType::Major) => {
-                                *major += 1;
-                                *minor = 0;
-                                *patch = 0;
-                                *candidate = 0;
-                            }
-                            BumpType::Point(PointType::Minor) => {
-                                *minor += 1;
-                                *patch = 0;
-                                *candidate = 0;
-                            }
-                            BumpType::Point(PointType::Patch) => {
-                                *patch += 1;
-                                *candidate = 0;
-                            }
-                            BumpType::Candidate => {
-                                if *candidate > 0 {
-                                    *candidate += 1;
-                                } else {
-                                    // Use promotion strategy from config
-                                    match semver_config.candidate.promotion.as_str() {
-                                        "major" => {
-                                            *major += 1;
-                                            *minor = 0;
-                                            *patch = 0;
-                                        }
-                                        "minor" => {
-                                            *minor += 1;
-                                            *patch = 0;
-                                        }
-                                        "patch" => {
-                                            *patch += 1;
-                                        }
-                                        _ => {
-                                            // Default to minor if unrecognized strategy
-                                            *minor += 1;
-                                            *patch = 0;
-                                        }
-                                    }
-                                    *candidate = 1; // start candidate at 1
-                                }
-                            }
-                            BumpType::Release => {
-                                // Release does not increment, just drops candidate and tags commit
-                                if *candidate == 0 {
-                                    return Err(BumpError::LogicError(
-                                        "Cannot release without a candidate".to_string(),
-                                    ));
-                                }
-                                *candidate = 0;
-                            }
-                            BumpType::Calendar => {
-                                return Err(BumpError::LogicError(
-                                    "SemVer does not support --calendar bump".to_string()
-                                ));
-                            }
-                            BumpType::Base => { /* won't happen */ }
-                        }
-                        Ok(())
+            VersionType::SemVer ( semver ) => {
+                match bump_type {
+                    BumpType::Prefix(prefix) => {
+                        semver.format.prefix = prefix.clone();
                     }
-                    _ => unreachable!("SemVer version type must have SemVer config"),
+                    BumpType::Point(PointType::Major) => {
+                        semver.version.major += 1;
+                        semver.version.minor = 0;
+                        semver.version.patch = 0;
+                        semver.version.candidate = 0;
+                    }
+                    BumpType::Point(PointType::Minor) => {
+                        semver.version.minor += 1;
+                        semver.version.patch = 0;
+                        semver.version.candidate = 0;
+                    }
+                    BumpType::Point(PointType::Patch) => {
+                        semver.version.patch += 1;
+                        semver.version.candidate = 0;
+                    }
+                    BumpType::Candidate => {
+                        if semver.version.candidate > 0 {
+                            semver.version.candidate += 1;
+                        } else {
+                            match semver.candidate.promotion.as_str() {
+                                "major" => {
+                                    semver.version.major += 1;
+                                    semver.version.minor = 0;
+                                    semver.version.patch = 0;
+                                }
+                                "minor" => {
+                                    semver.version.minor += 1;
+                                    semver.version.patch = 0;
+                                }
+                                "patch" => {
+                                    semver.version.patch += 1;
+                                }
+                                _ => {
+                                    // Default to minor if unrecognized strategy
+                                    semver.version.minor += 1;
+                                    semver.version.patch = 0;
+                                }
+                            }
+                            semver.version.candidate = 1; // start candidate at 1
+                        }
+                    }
+                    BumpType::Release => {
+                        // Release does not increment, just drops candidate and tags commit
+                        if semver.version.candidate == 0 {
+                            return Err(BumpError::LogicError(
+                                "Cannot release without a candidate".to_string(),
+                            ));
+                        }
+                        semver.version.candidate = 0;
+                    }
+                    BumpType::Calendar => {
+                        return Err(BumpError::LogicError(
+                            "SemVer does not support --calendar bump".to_string()
+                        ));
+                    }
                 }
+                Ok(())
             }
-            VersionType::CalVer { revision } => {
-                match &mut self.config {
-                    Config::CalVer(calver_config) => {
-                        match bump_type {
-                            BumpType::Calendar => {
-                                // Get current date and format components
-                                let now = chrono::Utc::now();
-                                let new_year = now.format(&calver_config.format.year).to_string();
-                                let new_month = calver_config.format.month.as_ref()
-                                    .map(|fmt| now.format(fmt).to_string());
-                                let new_day = calver_config.format.day.as_ref()
-                                    .map(|fmt| now.format(fmt).to_string());
-                                
-                                // Compare with stored version to check for same date
-                                let is_same_date = new_year == calver_config.version.year
-                                    && new_month == calver_config.version.month
-                                    && new_day == calver_config.version.day;
-                                
-                                if is_same_date {
-                                    // Same date - increment revision
-                                    *revision += 1;
-                                } else {
-                                    // Different date - update date and reset revision
-                                    *revision = 0;
-                                    calver_config.version.year = new_year;
-                                    calver_config.version.month = new_month;
-                                    calver_config.version.day = new_day;
-                                }
-                            }
-                            _ => {
-                                return Err(BumpError::LogicError(
-                                    "CalVer only supports --calendar bump type".to_string()
-                                ));
-                            }
+            VersionType::CalVer ( calver ) => {
+                match bump_type {
+                    BumpType::Calendar => {
+                        // Get current date and format components
+                        let now = chrono::Utc::now();
+                        let new_year = now.format(&calver.format.year).to_string();
+                        let new_month = calver.format.month.as_ref()
+                            .map(|fmt| now.format(fmt).to_string());
+                        let new_day = calver.format.day.as_ref()
+                            .map(|fmt| now.format(fmt).to_string());
+                        
+                        // Compare with stored version to check for same date
+                        let is_same_date = new_year == calver.version.year
+                            && new_month == calver.version.month
+                            && new_day == calver.version.day;
+                        
+                        if is_same_date {
+                            // Same date - increment revision
+                            calver.conflict.revision += 1;
+                        } else {
+                            // Different date - update date and reset revision
+                            calver.conflict.revision = 0;
+                            calver.version.year = new_year;
+                            calver.version.month = new_month;
+                            calver.version.day = new_day;
                         }
                         Ok(())
                     }
-                    _ => unreachable!("CalVer version type must have CalVer config"),
+                    _ => {
+                        return Err(BumpError::LogicError(
+                            "CalVer only supports --calendar bump type".to_string()
+                        ));
+                    }
                 }
             }
         }

@@ -1,5 +1,5 @@
 use crate::lang::{self, Language};
-use crate::version::{Version, VersionType, Config};
+use crate::version::{Version, VersionType, default_calver, default_semver};
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
@@ -34,7 +34,6 @@ pub enum BumpType {
     Candidate, // candidate will bump the minor version and append a rc1
     Release,   // release will drop candidacy and not increment (hence released)
     Calendar,  // calendar will update to current date (CalVer only)
-    Base,
 }
 
 #[derive(Debug)]
@@ -136,31 +135,21 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
     ensure_directory_exists(&filepath)?;
 
     if use_calver {
-        // CalVer - no git tag detection, just create config
         let version = Version {
-            prefix: prefix.to_string(),
-            timestamp: None,
-            version_type: VersionType::CalVer { revision: 0 },
+            version_type: VersionType::CalVer(
+                default_calver(prefix)
+            ),
             path: filepath.clone(),
-            config: crate::version::default_calver_config(prefix.to_string()),
         };
         version.file_init()?;
         println!("Initialized new CalVer version file at '{}'", filepath.display());
     } else {
-        // SemVer - try git tag detection silently, fallback to 0.1.0
-        let version = match get_git_tag(true) {
-            Ok(git_tag) => {
-                println!("Found git tag: {git_tag}");
-                let mut git_version = Version::from_string(&git_tag, &filepath)?;
-                git_version.prefix = prefix.to_string(); // Override prefix from CLI
-                git_version
-            }
-            Err(_) => {
-                // No git tag found, default to 0.1.0
-                Version::default(&filepath)
-            }
+        let version = Version {
+            version_type: VersionType::SemVer(
+                default_semver("v", 0, 1, 0, 0)
+            ),
+            path: filepath.clone(),
         };
-        
         version.file_init()?;
         println!("Initialized new SemVer version file at '{}'", filepath.display());
     }
@@ -168,26 +157,22 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
     Ok(())
 }
 
-pub fn print(version: &Version, base: bool) {
-    let bump_type = if base {
-        BumpType::Base
+pub fn print(version: &Version, base: bool) -> Result<(), BumpError> {
+    if base {
+        let base_str= version.to_base_string()?;
+        print!("{}", base_str);
     } else {
-        match &version.version_type {
-            VersionType::SemVer { candidate, .. } if *candidate > 0 => BumpType::Candidate,
-            _ => BumpType::Point(PointType::Patch), // bump_type doesn't matter here
-        }
-    };
-    print!("{}", version.to_string(&bump_type));
+        let version_str = version.to_string()?;
+        print!("{}", version_str);
+    }
+    Ok(())
 }
 
-pub fn print_with_timestamp(version: &Version) {
-    // bump_type doesn't matter here
-    let bump_type = BumpType::Point(PointType::Patch);
-    if let Some(timestamp) = &version.timestamp {
-        print!("{} (built on {})", version.to_string(&bump_type), timestamp);
-    } else {
-        print!("{}", version.to_string(&bump_type));
-    }
+pub fn print_with_timestamp(version: &Version) -> Result<(), BumpError> {
+    let timestamp= version.get_timestamp()?;
+    let version_str = version.to_string()?;
+    print!("{} {}", version_str, timestamp);
+    Ok(())
 }
 
 pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
@@ -236,24 +221,23 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
             BumpType::Point(_) => println!(
                 "Bumped '{}' to point release {}",
                 version.path.display(),
-                version.to_string(&bump_type)
+                version.to_root_string()?
             ),
             BumpType::Candidate => println!(
                 "Bumped '{}' to new candidate {}",
                 version.path.display(),
-                version.to_string(&bump_type)
+                version.to_root_string()?
             ),
             BumpType::Release => println!(
                 "Bumped '{}' drop candidacy to release! {}",
                 version.path.display(),
-                version.to_string(&bump_type)
+                version.to_root_string()?
             ),
             BumpType::Calendar => println!(
                 "Bumped '{}' to calendar version {}",
                 version.path.display(),
-                version.to_string(&bump_type)
+                version.to_root_string()?
             ),
-            BumpType::Base => { /* won't happen */ }
         },
         Err(err) => {
             return Err(err);
@@ -328,24 +312,16 @@ pub fn get_git_branch() -> Result<String, BumpError> {
     run_git("rev-parse --abbrev-ref HEAD")
 }
 
-pub fn get_development_suffix(version: &Version) -> Result<String, BumpError> {
-    match &version.config {
-        Config::SemVer(semver_config) => {
-            match semver_config.development.promotion.as_str() {
-                "git_sha" => get_git_commit_sha(),
-                "branch" => get_git_branch(),
-                "full" => {
-                    let branch = get_git_branch()?;
-                    let sha = get_git_commit_sha()?;
-                    Ok(format!("{}_{}", branch, sha))
-                }
-                _ => get_git_commit_sha(), // default to git_sha
-            }
+pub fn get_development_suffix(promotion_strategy: &str) -> Result<String, BumpError> {
+    match promotion_strategy {
+        "git_sha" => get_git_commit_sha(),
+        "branch" => get_git_branch(),
+        "full" => {
+            let branch = get_git_branch()?;
+            let sha = get_git_commit_sha()?;
+            Ok(format!("{}_{}", branch, sha))
         }
-        Config::CalVer(_) => {
-            // CalVer doesn't use development suffixes
-            Err(BumpError::LogicError("CalVer does not support development suffixes".to_string()))
-        }
+        _ => get_git_commit_sha(), // default to git_sha
     }
 }
 
@@ -367,30 +343,28 @@ pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> 
 
 pub fn build_tag_name(version: &Version) -> Result<String, BumpError> {
     let tag_name = match &version.version_type {
-        VersionType::SemVer { major, minor, patch, candidate } => {
-            match &version.config {
-                Config::SemVer(semver_config) => {
-                    if *candidate > 0 {
-                        format!(
-                            "{}{}.{}.{}{}{}",
-                            version.prefix,
-                            major,
-                            minor,
-                            patch,
-                            semver_config.candidate.delimiter,
-                            candidate
-                        )
-                    } else {
-                        format!(
-                            "{}{}.{}.{}",
-                            version.prefix, major, minor, patch
-                        )
-                    }
-                }
-                _ => unreachable!("SemVer version type must have SemVer config"),
+        VersionType::SemVer ( semver ) => {
+            if semver.version.candidate > 0 {
+                format!(
+                    "{}{}.{}.{}{}{}",
+                    semver.format.prefix,
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch,
+                    semver.candidate.delimiter,
+                    semver.version.candidate
+                )
+            } else {
+                format!(
+                    "{}{}.{}.{}",
+                    semver.format.prefix,
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch
+                )
             }
         }
-        VersionType::CalVer { .. } => version.fully_qualified_string()?,
+        VersionType::CalVer { .. } => version.to_string()?,
     };
 
     Ok(tag_name)
