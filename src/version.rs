@@ -553,6 +553,24 @@ delimiter = "{}"
         }
     }
 
+    // internal call to give `apply()` the version string without dev suffixes
+    pub fn to_root_string(&self) -> Result<String, BumpError> {
+        match &self.version_type {
+            VersionType::SemVer ( semver ) => {
+                Ok(format!(
+                    "{}{}.{}.{}",
+                    semver.format.prefix,
+                    semver.version.major,
+                    semver.version.minor,
+                    semver.version.patch
+                ))
+            }
+            VersionType::CalVer ( calver ) => {
+                Version::get_calver_string(calver)
+            }
+        }
+    }
+
     pub fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         match &mut self.version_type {
             VersionType::SemVer ( semver ) => {

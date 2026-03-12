@@ -39,9 +39,9 @@ fn optional_timestamp_line(lang: Language, version: &Version) -> String {
     if let Ok(timestamp) = version.get_timestamp()  {
         match lang {
             Language::C => format!("#define VERSION_TIMESTAMP \"{}\"\n", timestamp),
-            Language::Go => format!("\tTIMESTAMP = \"{}\"\n", timestamp),
-            Language::Java => format!("    public static final String TIMESTAMP = \"{}\";\n", timestamp),
-            Language::CSharp => format!("    public const string TIMESTAMP = \"{}\";\n", timestamp),
+            Language::Go => format!("TIMESTAMP = \"{}\"\n", timestamp),
+            Language::Java => format!("public static final String TIMESTAMP = \"{}\";\n", timestamp),
+            Language::CSharp => format!("public const string TIMESTAMP = \"{}\";\n", timestamp),
             Language::Python => format!("VERSION_TIMESTAMP = \"{}\"\n", timestamp),
         }
     } else {
@@ -169,7 +169,7 @@ const (
 	PATCH     = {}
 	CANDIDATE = {}
 	STRING    = "{}"
-    "{}"
+    {}
 )
 "#,
                 semver.format.prefix,

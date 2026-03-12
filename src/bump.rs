@@ -221,22 +221,22 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
             BumpType::Point(_) => println!(
                 "Bumped '{}' to point release {}",
                 version.path.display(),
-                version.to_string()?
+                version.to_root_string()?
             ),
             BumpType::Candidate => println!(
                 "Bumped '{}' to new candidate {}",
                 version.path.display(),
-                version.to_string()?
+                version.to_root_string()?
             ),
             BumpType::Release => println!(
                 "Bumped '{}' drop candidacy to release! {}",
                 version.path.display(),
-                version.to_string()?
+                version.to_root_string()?
             ),
             BumpType::Calendar => println!(
                 "Bumped '{}' to calendar version {}",
                 version.path.display(),
-                version.to_string()?
+                version.to_root_string()?
             ),
         },
         Err(err) => {
