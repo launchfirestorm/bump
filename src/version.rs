@@ -534,12 +534,12 @@ delimiter = "{}"
         }
     }
 
+    // useful for CMake and other systems that want just MAJOR.MINOR.PATCH
     pub fn to_base_string(&self) -> Result<String, BumpError> {
         match &self.version_type {
             VersionType::SemVer ( semver ) => {
                 Ok(format!(
-                    "{}{}.{}.{}",
-                    semver.format.prefix,
+                    "{}.{}.{}",
                     semver.version.major,
                     semver.version.minor,
                     semver.version.patch
