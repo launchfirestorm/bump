@@ -6,7 +6,14 @@
 ```
 # `bump` automatic versioning
 
-> An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration, multi-language code generation, and git-aware version detection. No assumption is made, you `bump` when you want, how you want.
+> An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration and multi-language code generation. No assumption is made, you `bump` when you want, how you want.
+
+### TL;DR
+- A <u>regex-less</u> way to do versioning 😎
+- Human/Machine readable `bump.toml`
+- Flexible for your needs
+- There stop thinking about versioning!
+
 
 ## Why?
 I got tired of bespoke scripts and tons of regex parsing that differentiated slightly from repo to repo just to bump versions. So I created `bump` to be _dead simple_ and **without opinion**. Everyone wants to version differently and that's okay, with a sprinkling of convention and a large helping of automation this tool allows you to never have to worry about versions again!
@@ -38,12 +45,14 @@ This creates a **"BUMPFILE"** defaulted to `bump.toml` in your current directory
 ### Reporting Commands
 
 > Often times is getting the version _in other tools_ is the problem. 
+> All print variants write output **without a trailing newline**.
 
 ```bash
 # Print current version
-bump --print [BUMPFILE]                    # Full version with suffixes
-bump --print-base [BUMPFILE]               # Base version only (no prefix or candidate suffix)
-bump --print-with-timestamp [BUMPFILE]     # Version with build timestamp
+bump --print [BUMPFILE]                    # Root version (prefix + candidate suffix if present)
+bump --print-base [BUMPFILE]               # Base semver only: MAJOR.MINOR.PATCH (SemVer only)
+bump --print-full [BUMPFILE]               # Full version with development suffix policy (git_sha/branch/full)
+bump --print-with-timestamp [BUMPFILE]     # Full version + configured build timestamp (SemVer only)
 ```
 
 ### PRO TIP: you can inject bump _everywhere_
@@ -138,7 +147,7 @@ bump update Cargo.toml custom.toml
 
 - **Dual Versioning Schemes**: Choose between **SemVer** (semantic versioning) or **CalVer** (calendar versioning) based on your project needs
 - **TOML Configuration**: Declare your version in a file and `bump` will modify it automatically. Define behavior and preference from the same file. Comments are preserved. Create one with `bump init`
-- **Easy Build System Integration**: Define in _one place_ and use everywhere with `bump --print`, `bump --print-base`, or `bump --print-with-timestamp`
+- **Easy Build System Integration**: Define in _one place_ and use everywhere with `bump --print`, `bump --print-base`, `bump --print-full`, or `bump --print-with-timestamp`
 - **Semantic Versioning**: Full support for `--major`, `--minor`, `--patch`, `--candidate`, and `--release` bumps with configurable promotion strategies
 - **Calendar Versioning**: Date-based versions with strftime format patterns (e.g., `2026.02.25`) and automatic revision increment for same-day releases via `--calendar`
 - **Multi-Language Support**: Generate version files for C, Go, Java, C#, and Python - useful for injecting version strings into binaries

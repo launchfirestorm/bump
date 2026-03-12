@@ -45,6 +45,13 @@ pub enum BumpError {
     Git(String),
 }
 
+pub enum PrintType {
+    Root,
+    Base,
+    Full,
+    Timestamp,
+}
+
 impl fmt::Display for BumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -157,21 +164,26 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
     Ok(())
 }
 
-pub fn print(version: &Version, base: bool) -> Result<(), BumpError> {
-    if base {
-        let base_str= version.to_base_string()?;
-        print!("{}", base_str);
-    } else {
-        let version_str = version.to_string()?;
-        print!("{}", version_str);
+pub fn print(version: &Version, print_type: &PrintType) -> Result<(), BumpError> {
+    match print_type {
+        PrintType::Root => {
+            let version_str = version.to_root_string()?;
+            print!("{}", version_str);
+        }
+        PrintType::Base => {
+            let base_str= version.to_base_string()?;
+            print!("{}", base_str);
+        }
+        PrintType::Full => {
+            let version_str = version.to_string()?;
+            print!("{}", version_str);
+        }
+        PrintType::Timestamp => {
+            let timestamp= version.get_timestamp()?;
+            let version_str = version.to_string()?;
+            print!("{} {}", version_str, timestamp);
+        }
     }
-    Ok(())
-}
-
-pub fn print_with_timestamp(version: &Version) -> Result<(), BumpError> {
-    let timestamp= version.get_timestamp()?;
-    let version_str = version.to_string()?;
-    print!("{} {}", version_str, timestamp);
     Ok(())
 }
 

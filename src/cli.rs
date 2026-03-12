@@ -84,7 +84,7 @@ pub fn cli() -> Command {
                 .long("print")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
-                .help("Print version from BUMPFILE, without a newline"),
+                .help("Print version without newline, with prefix and with candidate suffix (if in candidacy)"),
         )
         .arg(
             Arg::new("print-base")
@@ -92,14 +92,21 @@ pub fn cli() -> Command {
                 .long("print-base")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
-                .help("Print base version (no candidate suffix) from BUMPFILE, without a newline"),
+                .help("Print base version without newline, no prefix and no candidate suffix"),
+        )
+        .arg(
+            Arg::new("print-full")
+                .long("print-full")
+                .action(clap::ArgAction::SetTrue)
+                .group("print-group")
+                .help("Print full version without newline, with prefix and with development promotion"),
         )
         .arg(
             Arg::new("print-with-timestamp")
                 .long("print-with-timestamp")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
-                .help("Print version with timestamp from BUMPFILE, without a newline"),
+                .help("Print full version without newline, with timestamp (SemVer only)"),
         )
         .arg(
             Arg::new("prefix")
