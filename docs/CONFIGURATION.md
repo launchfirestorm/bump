@@ -183,3 +183,8 @@ All commands support the following global options:
   - Example: `bump --print custom.toml`
   - Example: `bump init config/version.toml`
 - **--prefix PREFIX**: Override the prefix for version tags (e.g., 'v', 'release-', or empty string '')
+- **Print flags** (all outputs are written **without a trailing newline**)
+  - `--print`: Root version (prefix + candidate suffix if present)
+  - `--print-base`: Base semver only: `MAJOR.MINOR.PATCH` (**SemVer only**)
+  - `--print-full`: Full version with development suffix policy (`git_sha`, `branch`, or `full`)
+  - `--print-with-timestamp`: Full version + configured build timestamp (**SemVer only**)

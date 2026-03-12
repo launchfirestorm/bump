@@ -55,12 +55,16 @@ fn main() -> ExitCode {
                         return egress(Err(err));
                     }
                 };
-                if matches.get_flag("print-with-timestamp") {
-                    egress(bump::print_with_timestamp(&version));
+                let print_type = if matches.get_flag("print-base") {
+                    bump::PrintType::Base
+                } else if matches.get_flag("print-full") {
+                    bump::PrintType::Full
+                } else if matches.get_flag("print-with-timestamp") {
+                    bump::PrintType::Timestamp
                 } else {
-                    egress(bump::print(&version, matches.get_flag("print-base")));
-                }
-                ExitCode::SUCCESS
+                    bump::PrintType::Root
+                };
+                egress(bump::print(&version, &print_type))
             } else if matches.contains_id("point-release")
                 || matches.contains_id("candidate-release")
                 || matches.contains_id("calendar-release")

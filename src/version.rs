@@ -557,13 +557,25 @@ delimiter = "{}"
     pub fn to_root_string(&self) -> Result<String, BumpError> {
         match &self.version_type {
             VersionType::SemVer ( semver ) => {
-                Ok(format!(
-                    "{}{}.{}.{}",
-                    semver.format.prefix,
-                    semver.version.major,
-                    semver.version.minor,
-                    semver.version.patch
-                ))
+                if semver.version.candidate > 0 {
+                    Ok(format!(
+                        "{}{}.{}.{}{}{}",
+                        semver.format.prefix,
+                        semver.version.major,
+                        semver.version.minor,
+                        semver.version.patch,
+                        semver.candidate.delimiter,
+                        semver.version.candidate
+                    ))
+                } else {
+                    Ok(format!(
+                        "{}{}.{}.{}",
+                        semver.format.prefix,
+                        semver.version.major,
+                        semver.version.minor,
+                        semver.version.patch
+                    ))
+                }
             }
             VersionType::CalVer ( calver ) => {
                 Version::get_calver_string(calver)
@@ -665,9 +677,9 @@ delimiter = "{}"
                         Ok(())
                     }
                     _ => {
-                        return Err(BumpError::LogicError(
+                        Err(BumpError::LogicError(
                             "CalVer only supports --calendar bump type".to_string()
-                        ));
+                        ))
                     }
                 }
             }
