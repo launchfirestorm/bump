@@ -212,3 +212,106 @@ fn bump_candidate_increments_or_starts_based_on_state() {
         _ => panic!("expected SemVer variant"),
     }
 }
+
+#[test]
+fn bump_candidate_uses_major_promotion_strategy() {
+    let mut version = make_semver("v", 1, 2, 3, 0);
+    if let VersionType::SemVer(semver) = &mut version.version_type {
+        semver.candidate.promotion = "major".to_string();
+    }
+
+    version.bump(&BumpType::Candidate).unwrap();
+
+    match version.version_type {
+        VersionType::SemVer(semver) => {
+            assert_eq!(semver.version.major, 2);
+            assert_eq!(semver.version.minor, 0);
+            assert_eq!(semver.version.patch, 0);
+            assert_eq!(semver.version.candidate, 1);
+        }
+        _ => panic!("expected SemVer variant"),
+    }
+}
+
+#[test]
+fn bump_candidate_uses_patch_promotion_strategy() {
+    let mut version = make_semver("v", 1, 2, 3, 0);
+    if let VersionType::SemVer(semver) = &mut version.version_type {
+        semver.candidate.promotion = "patch".to_string();
+    }
+
+    version.bump(&BumpType::Candidate).unwrap();
+
+    match version.version_type {
+        VersionType::SemVer(semver) => {
+            assert_eq!(semver.version.major, 1);
+            assert_eq!(semver.version.minor, 2);
+            assert_eq!(semver.version.patch, 4);
+            assert_eq!(semver.version.candidate, 1);
+        }
+        _ => panic!("expected SemVer variant"),
+    }
+}
+
+#[test]
+fn bump_candidate_invalid_promotion_defaults_to_minor() {
+    let mut version = make_semver("v", 1, 2, 7, 0);
+    if let VersionType::SemVer(semver) = &mut version.version_type {
+        semver.candidate.promotion = "bogus".to_string();
+    }
+
+    version.bump(&BumpType::Candidate).unwrap();
+
+    match version.version_type {
+        VersionType::SemVer(semver) => {
+            assert_eq!(semver.version.major, 1);
+            assert_eq!(semver.version.minor, 3);
+            assert_eq!(semver.version.patch, 0);
+            assert_eq!(semver.version.candidate, 1);
+        }
+        _ => panic!("expected SemVer variant"),
+    }
+}
+
+#[test]
+fn build_tag_name_semver_stable_and_candidate() {
+    let stable = make_semver("v", 2, 3, 4, 0);
+    assert_eq!(build_tag_name(&stable).unwrap(), "v2.3.4");
+
+    let candidate = make_semver("v", 2, 3, 4, 5);
+    assert_eq!(build_tag_name(&candidate).unwrap(), "v2.3.4-rc5");
+}
+
+#[test]
+fn create_git_tag_fails_outside_git_repository() {
+    let _repo = create_temp_dir();
+    let version = make_semver("v", 9, 9, 9, 0);
+
+    let err = create_git_tag(&version, None).unwrap_err();
+    match err {
+        BumpError::LogicError(msg) => assert!(msg.contains("Not in a git repository")),
+        _ => panic!("expected LogicError"),
+    }
+}
+
+#[test]
+fn create_git_tag_creates_tag_and_rejects_duplicate() {
+    let repo = create_temp_git_repo(false);
+    let version = Version {
+        version_type: VersionType::SemVer(default_semver("v", 1, 4, 2, 0)),
+        path: repo.path().join("bump.toml"),
+    };
+
+    with_cwd(repo.path(), || {
+        create_git_tag(&version, Some("test tag")).unwrap();
+    });
+
+    let created = run_git_in_output(repo.path(), &["tag", "--list", "v1.4.2"]);
+    assert_eq!(created, "v1.4.2");
+
+    let duplicate_err = with_cwd(repo.path(), || create_git_tag(&version, None)).unwrap_err();
+    match duplicate_err {
+        BumpError::Git(msg) => assert!(msg.contains("already exists")),
+        _ => panic!("expected Git error"),
+    }
+}

@@ -1,11 +1,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
 pub use crate::bump::{
-    BumpError, BumpType, PointType,
+    build_tag_name, create_git_tag, BumpError, BumpType, PointType,
 };
 pub use crate::version::{
     default_calver, default_semver, CalVer, SemVer, Version, VersionType,
@@ -35,6 +35,7 @@ impl Drop for TestRepo {
 }
 
 static TEST_GIT_CONFIG: OnceLock<PathBuf> = OnceLock::new();
+static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn get_test_git_config() -> &'static Path {
     TEST_GIT_CONFIG.get_or_init(|| {
@@ -209,6 +210,16 @@ pub fn make_calver(prefix: &str) -> Version {
         version_type: VersionType::CalVer(default_calver(prefix)),
         path: PathBuf::from("test.toml"),
     }
+}
+
+pub fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
+    let lock = CWD_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().unwrap();
+    let previous = std::env::current_dir().unwrap();
+    std::env::set_current_dir(dir).unwrap();
+    let output = f();
+    std::env::set_current_dir(previous).unwrap();
+    output
 }
 
 mod semver;

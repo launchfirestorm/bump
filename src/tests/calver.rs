@@ -178,3 +178,18 @@ fn get_timestamp_on_calver_returns_error() {
         _ => panic!("expected LogicError"),
     }
 }
+
+#[test]
+fn build_tag_name_for_calver_uses_rendered_version_string() {
+    let mut version = make_calver("v");
+
+    let stable_tag = build_tag_name(&version).unwrap();
+    let stable_text = version.to_string().unwrap();
+    assert_eq!(stable_tag, stable_text);
+
+    if let VersionType::CalVer(calver) = &mut version.version_type {
+        calver.conflict.revision = 3;
+    }
+    let conflict_tag = build_tag_name(&version).unwrap();
+    assert!(conflict_tag.ends_with("-3"));
+}
