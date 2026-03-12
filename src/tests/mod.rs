@@ -114,6 +114,10 @@ pub fn run_git_in_output(path: &Path, args: &[&str]) -> String {
 
 pub fn init_repo(path: &Path) {
     run_git_in(path, &["init"]);
+    run_git_in(path, &["config", "user.name", "Test User"]);
+    run_git_in(path, &["config", "user.email", "test@example.com"]);
+    run_git_in(path, &["config", "commit.gpgsign", "false"]);
+    run_git_in(path, &["config", "tag.gpgsign", "false"]);
     run_git_in(path, &["commit", "--allow-empty", "-m", "Initial commit"]);
 }
 
