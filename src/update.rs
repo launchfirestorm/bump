@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 
-pub(crate) fn cargo_toml(
+pub fn cargo_toml(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
@@ -20,7 +20,7 @@ pub(crate) fn cargo_toml(
 
     // Update version in [package] section
     // Strip the prefix (e.g., "v") from the version string for Cargo.toml
-    let version_str = version.fully_qualified_string()?;
+    let version_str = version.to_string()?;
     let cargo_version = version_str
         .strip_prefix('v')
         .unwrap_or(&version_str);

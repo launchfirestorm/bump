@@ -56,9 +56,9 @@ fn main() -> ExitCode {
                     }
                 };
                 if matches.get_flag("print-with-timestamp") {
-                    bump::print_with_timestamp(&version);
+                    egress(bump::print_with_timestamp(&version));
                 } else {
-                    bump::print(&version, matches.get_flag("print-base"));
+                    egress(bump::print(&version, matches.get_flag("print-base")));
                 }
                 ExitCode::SUCCESS
             } else if matches.contains_id("point-release")
