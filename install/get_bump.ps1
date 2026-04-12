@@ -5,6 +5,8 @@
 # Usage:
 #   irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.ps1 | iex
 #
+# CI: set $env:GITHUB_TOKEN or GH_TOKEN so GitHub API requests authenticate (avoids HTTP 403 on shared runners).
+#
 # From a clone:
 #   .\install\get_bump.ps1
 #
@@ -22,6 +24,22 @@ $ErrorActionPreference = 'Stop'
 $script:GithubHeaders = @{
   'User-Agent' = 'bump-windows-installer'
   'Accept'     = 'application/vnd.github+json'
+}
+if ($env:GITHUB_TOKEN) {
+  $script:GithubHeaders['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
+}
+elseif ($env:GH_TOKEN) {
+  $script:GithubHeaders['Authorization'] = "Bearer $($env:GH_TOKEN)"
+}
+
+$script:DownloadHeaders = @{
+  'User-Agent' = 'bump-windows-installer'
+}
+if ($env:GITHUB_TOKEN) {
+  $script:DownloadHeaders['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
+}
+elseif ($env:GH_TOKEN) {
+  $script:DownloadHeaders['Authorization'] = "Bearer $($env:GH_TOKEN)"
 }
 
 function Write-Log {
@@ -98,7 +116,7 @@ Write-Log Info "Downloading: $downloadUrl"
 
 $tempFile = Join-Path ([System.IO.Path]::GetTempPath()) ('bump-install-' + [Guid]::NewGuid().ToString('N') + '.exe')
 try {
-  Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+  Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing -Headers $script:DownloadHeaders
 } catch {
   Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
   Write-Log Err "Download failed: $($_.Exception.Message)"

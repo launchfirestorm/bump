@@ -9,7 +9,7 @@
 > An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration and multi-language code generation. No assumption is made, you `bump` when you want, how you want.
 
 ### TL;DR
-- A <u>regex-less</u> way to do versioning 😎
+- A **regex-less** way to do versioning 😎
 - Human/Machine readable `bump.toml`
 - Flexible for your needs
 - There stop thinking about versioning!
@@ -172,5 +172,21 @@ bump update Cargo.toml custom.toml
 - **[Configuration Reference](docs/CONFIGURATION.md)** - Detailed configuration options for SemVer and CalVer
 - **[Contributing Guide](docs/CONTRIBUTING.md)** - Build from source and development instructions
 - **[Workflow Guide](docs/WORKFLOW.md)** - Use `bump` to automate you pipelines!
+
+## **GitHub Actions:** 
+
+composite action `action.yml` at repo root installs bump for the job’s OS/arch:
+
+```yaml
+- uses: launchfirestorm/bump@v6
+```
+
+if your token differs from the default `GITHUB_TOKEN`
+
+```yaml
+- uses: launchfirestorm/bump@v6
+  with:
+    github-token: ${{ secrets.YOUR_TOKEN_HERE }}
+```
 
 ## [MIT License](./LICENSE)

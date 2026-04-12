@@ -6,6 +6,8 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | bash
 #
+# CI: set GITHUB_TOKEN or GH_TOKEN so api.github.com is authenticated (avoids HTTP 403 on shared runners).
+#
 # Native Windows (Git Bash / MSYS / Cygwin): use PowerShell instead:
 #   irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.ps1 | iex
 #
@@ -16,6 +18,16 @@ set -eu
 REPO="launchfirestorm/bump"
 BINARY_NAME="bump"
 TARGET_PATH=""
+
+# Optional: GITHUB_TOKEN (GitHub Actions) or GH_TOKEN (gh CLI) — Bearer for GitHub API / release downloads.
+init_github_curl_auth() {
+  GITHUB_CURL_AUTH=()
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    GITHUB_CURL_AUTH+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  elif [[ -n "${GH_TOKEN:-}" ]]; then
+    GITHUB_CURL_AUTH+=(-H "Authorization: Bearer ${GH_TOKEN}")
+  fi
+}
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,7 +45,7 @@ error() {
 
 get_latest_release_tag() {
   local json tag
-  json=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: bump-install" \
+  json=$(curl -fsSL "${GITHUB_CURL_AUTH[@]}" -H "Accept: application/vnd.github+json" -H "User-Agent: bump-install" \
     "https://api.github.com/repos/${REPO}/releases/latest") || return 1
   tag=$(printf '%s\n' "$json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
   [[ -n "$tag" ]] || return 1
@@ -99,7 +111,7 @@ install_bump() {
   download_url="https://github.com/${REPO}/releases/download/${tag_name}/${asset_name}"
   info "Downloading from: ${download_url}"
 
-  curl -fsSL -o "$temp_file" "$download_url" || error "Download failed"
+  curl -fsSL "${GITHUB_CURL_AUTH[@]}" -o "$temp_file" "$download_url" || error "Download failed"
 
   [[ -s "$temp_file" ]] || error "Downloaded file is empty"
   chmod +x "$temp_file" || error "Failed to make binary executable"
@@ -148,6 +160,7 @@ main() {
   echo "Bump installer (Unix)"
   echo ""
 
+  init_github_curl_auth
   detect_platform
   check_dependencies
   install_bump
