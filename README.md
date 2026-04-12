@@ -21,8 +21,18 @@ I got tired of bespoke scripts and tons of regex parsing that differentiated sli
 
 ## Installation
 
+**Linux, macOS, or WSL:**
+
+> ensure you have write permissions to `/usr/local/bin/`, if you need elevation then `... | sudo bash`
+
 ```bash
-curl -sSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.ps1 | iex
 ```
 
 
