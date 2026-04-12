@@ -75,7 +75,6 @@ function Add-UserPathEntry {
 
 Write-Host ''
 Write-Host 'Bump installer (Windows)' -ForegroundColor Cyan
-Write-Host 'Downloads from public GitHub releases (no authentication required).'
 Write-Host ''
 
 $arch = Get-TargetArch
