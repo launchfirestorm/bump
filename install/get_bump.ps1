@@ -1,15 +1,4 @@
 # Bump installer — Windows (PowerShell)
-#
-# Installs to %LOCALAPPDATA%\Programs\bump\bump.exe and adds that folder to your user PATH unless -SkipPath.
-#
-# Usage:
-#   irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.ps1 | iex
-#
-# CI: set $env:GITHUB_TOKEN or GH_TOKEN so GitHub API requests authenticate (avoids HTTP 403 on shared runners).
-#
-# From a clone:
-#   .\install\get_bump.ps1
-#
 # Requires: Windows PowerShell 5.1+ or PowerShell 7+.
 
 param(
@@ -102,7 +91,12 @@ $assetName = "bump-windows-$arch.exe"
 Write-Log Info "Platform: Windows ($arch)"
 
 if (-not $InstallDir) {
-  $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\bump'
+  if ($env:GITHUB_PATH -and $env:RUNNER_TEMP) {
+    $InstallDir = Join-Path $env:RUNNER_TEMP 'bump'
+    Write-Log Info "Install directory: RUNNER_TEMP\bump (GitHub Actions + GITHUB_PATH)"
+  } else {
+    $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\bump'
+  }
 }
 $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
 $targetPath = Join-Path $InstallDir $BinaryName
@@ -143,13 +137,26 @@ try {
 
 Write-Log Ok "Installed: $targetPath"
 
+$installDirFull = [System.IO.Path]::GetFullPath($InstallDir)
+
+# Register for later workflow steps (same pattern GitHub documents: append a directory line to GITHUB_PATH).
+if ($env:GITHUB_PATH) {
+  $installDirFull | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+  Write-Log Ok "Added install directory to GITHUB_PATH for subsequent steps: $installDirFull"
+}
+
+$env:Path = $env:Path + ';' + $installDirFull
+
 if (-not $SkipPath) {
-  if (Add-UserPathEntry -Directory $InstallDir) {
-    Write-Log Ok "Added to user PATH: $InstallDir"
+  if ($env:GITHUB_PATH) {
+    Write-Log Info 'Skipping per-user registry PATH (workflow PATH uses GITHUB_PATH file).'
   } else {
-    Write-Log Info "PATH already contains: $InstallDir"
+    if (Add-UserPathEntry -Directory $installDirFull) {
+      Write-Log Ok "Added to user PATH: $installDirFull"
+    } else {
+      Write-Log Info "PATH already contains: $installDirFull"
+    }
   }
-  $env:Path = $env:Path + ';' + $InstallDir
 }
 
 try {
