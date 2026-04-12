@@ -6,6 +6,8 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | bash
 #
+# CI: set GITHUB_TOKEN or GH_TOKEN so api.github.com is authenticated (avoids HTTP 403 on shared runners).
+#
 # Native Windows (Git Bash / MSYS / Cygwin): use PowerShell instead:
 #   irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.ps1 | iex
 #
@@ -16,6 +18,17 @@ set -eu
 REPO="launchfirestorm/bump"
 BINARY_NAME="bump"
 TARGET_PATH=""
+
+# Optional: GITHUB_TOKEN (GitHub Actions) or GH_TOKEN (gh CLI) — Bearer for GitHub API / release downloads.
+_bump_gh_token=""
+resolve_bump_gh_token() {
+  _bump_gh_token=""
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    _bump_gh_token=${GITHUB_TOKEN}
+  elif [[ -n "${GH_TOKEN:-}" ]]; then
+    _bump_gh_token=${GH_TOKEN}
+  fi
+}
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,8 +46,14 @@ error() {
 
 get_latest_release_tag() {
   local json tag
-  json=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: bump-install" \
-    "https://api.github.com/repos/${REPO}/releases/latest") || return 1
+  if [[ -n "${_bump_gh_token}" ]]; then
+    json=$(curl -fsSL -H "Authorization: Bearer ${_bump_gh_token}" \
+      -H "Accept: application/vnd.github+json" -H "User-Agent: bump-install" \
+      "https://api.github.com/repos/${REPO}/releases/latest") || return 1
+  else
+    json=$(curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: bump-install" \
+      "https://api.github.com/repos/${REPO}/releases/latest") || return 1
+  fi
   tag=$(printf '%s\n' "$json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
   [[ -n "$tag" ]] || return 1
   printf '%s\n' "$tag"
@@ -99,7 +118,12 @@ install_bump() {
   download_url="https://github.com/${REPO}/releases/download/${tag_name}/${asset_name}"
   info "Downloading from: ${download_url}"
 
-  curl -fsSL -o "$temp_file" "$download_url" || error "Download failed"
+  if [[ -n "${_bump_gh_token}" ]]; then
+    curl -fsSL -H "Authorization: Bearer ${_bump_gh_token}" \
+      -o "$temp_file" "$download_url" || error "Download failed"
+  else
+    curl -fsSL -o "$temp_file" "$download_url" || error "Download failed"
+  fi
 
   [[ -s "$temp_file" ]] || error "Downloaded file is empty"
   chmod +x "$temp_file" || error "Failed to make binary executable"
@@ -124,37 +148,14 @@ install_bump() {
   success "${BINARY_NAME} installed to ${target_path}"
 }
 
-verify_installation() {
-  local version
-
-  if [[ -z "${TARGET_PATH}" ]]; then
-    warning "Could not verify: install path was not set."
-    return
-  fi
-  if [[ ! -f "$TARGET_PATH" ]]; then
-    warning "Expected binary missing at ${TARGET_PATH}"
-    return
-  fi
-
-  version=$("$TARGET_PATH" --version 2>/dev/null) || version="unknown"
-  success "Installation complete. Version: ${version} (${TARGET_PATH})"
-
-  if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
-    warning "Add ${INSTALL_DIR} to your PATH, e.g.: export PATH=\"${INSTALL_DIR}:\$PATH\""
-  fi
-}
-
 main() {
   echo "Bump installer (Unix)"
   echo ""
 
+  resolve_bump_gh_token
   detect_platform
   check_dependencies
   install_bump
-  verify_installation
-
-  echo ""
-  echo "Done. Run 'bump --help' to get started."
 }
 
 main "$@"
