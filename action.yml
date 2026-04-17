@@ -12,7 +12,7 @@ branding:
   color: blue
 
 inputs:
-  github-token:
+  token:
     description: Token for api.github.com (avoids unauthenticated rate limits on CI). Defaults to the workflow GITHUB_TOKEN.
     required: false
     default: ${{ github.token }}
