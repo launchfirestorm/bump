@@ -167,7 +167,7 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
 pub fn print(version: &Version, print_type: &PrintType) -> Result<(), BumpError> {
     match print_type {
         PrintType::Root => {
-            let version_str = version.to_root_string()?;
+            let version_str = version.to_root_string(true)?;
             print!("{}", version_str);
         }
         PrintType::Base => {
@@ -233,22 +233,22 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
             BumpType::Point(_) => println!(
                 "Bumped '{}' to point release {}",
                 version.path.display(),
-                version.to_root_string()?
+                version.to_root_string(true)?
             ),
             BumpType::Candidate => println!(
                 "Bumped '{}' to new candidate {}",
                 version.path.display(),
-                version.to_root_string()?
+                version.to_root_string(true)?
             ),
             BumpType::Release => println!(
                 "Bumped '{}' drop candidacy to release! {}",
                 version.path.display(),
-                version.to_root_string()?
+                version.to_root_string(true)?
             ),
             BumpType::Calendar => println!(
                 "Bumped '{}' to calendar version {}",
                 version.path.display(),
-                version.to_root_string()?
+                version.to_root_string(true)?
             ),
         },
         Err(err) => {
