@@ -1,58 +1,42 @@
 # Workflow Examples
 
-## SemVer Release Pipeline
+## Single BUMPFILE Pipeline
 
 For traditional semantic versioning with candidates:
 
+### 1. Bump, tag, and push
 ```bash
-# Initialize SemVer project
-bump init
-
-# Develop with automatic git SHA suffixes
-bump gen --lang c --output version.h  # Generates: 0.0.0+a1b2c3d (untagged)
-
-# Create a release candidate
-bump --candidate              # 0.0.0 -> 0.1.0-rc1
-git commit -am "Bump to $(bump -p)"
-bump tag
-
-# Test and iterate
-bump --candidate              # 0.1.0-rc1 -> 0.1.0-rc2
-git commit -am "Bump to $(bump -p)"
-bump tag
-
-# Promote to release
-bump --release                # 0.1.0-rc2 -> 0.1.0
-git commit -am "Release $(bump -p)"
-bump tag
-
-# Generate final version files (detects tag, no SHA)
-bump gen --lang c --output version.h
-bump gen --lang go --output version.go
-# Build and deploy...
+bump --minor                    # using logic you can change this behavior 
+bump update Cargo.toml          # if you need to
+git add bump.toml               # add the changes to the index
+git commit                      # capture the changes 
+bump tag                        # name this commit to the version we just bumped
+git push origin HEAD --tags     # push edits to remote
 ```
 
-## CalVer Release Pipeline
-
-For date-based versioning ideal for continuous deployment:
-
+### 2. Now with tagged build (tag pipeline)
 ```bash
-# Initialize CalVer project
-bump init --calver
+# Generate version file to inject into the build system (bake into lib/app)
+bump gen --lang c --output version.h  # Generates: 0.1.0+a1b2c3d (untagged)
 
-# Each day gets a new version automatically
-bump --calendar               # Generates: 2026.02.25
-git commit -am "Release $(bump -p)"
-bump tag
-bump gen --lang python --output version.py
-# Build and deploy...
+# NOTE: version.h should be git ignored
 
-# Multiple releases same day? Automatic revision increment:
-bump --calendar               # 2026.02.25-1
-git commit -am "Hotfix $(bump -p)"
-bump tag
-bump gen --lang python --output version.py
-# Build and deploy...
+# Build your code 
+<build tool> ...
 ```
 
-**PRO TIP**: Add generated version files to `.gitignore` to avoid "behind by one" issues
+### 3. Deploy / Release
+
+## Multiple BUMPFILE Pipeline
+
+The glory of `bump` is that you can version MUTLIPLE things at once! 
+
+### 1. Bump, tag, and push
+```bash
+bump --minor lib1/bump.toml             # again logic can conditionally set this
+bump --major app/component/bump.toml    # different parts of the repo can have different cadences
+git add -u
+git commit
+bump tag
+git push origin HEAD --tags
+```

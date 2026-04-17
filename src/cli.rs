@@ -72,7 +72,7 @@ pub fn cli() -> Command {
                     Arg::new("path")
                         .value_name("PATH")
                         .num_args(1)
-                        .value_parser(clap::builder::PossibleValuesParser::new(["Cargo.toml"]))
+                        .value_parser(clap::builder::PossibleValuesParser::new(["Cargo.toml", "pyproject.toml"]))
                         .required(true)
                         .help("Certain file types bump is aware of, and know how to update")
                 )

@@ -554,13 +554,13 @@ delimiter = "{}"
     }
 
     // internal call to give `apply()` the version string without dev suffixes
-    pub fn to_root_string(&self) -> Result<String, BumpError> {
+    pub fn to_root_string(&self, prefix: bool) -> Result<String, BumpError> {
         match &self.version_type {
             VersionType::SemVer ( semver ) => {
                 if semver.version.candidate > 0 {
                     Ok(format!(
                         "{}{}.{}.{}{}{}",
-                        semver.format.prefix,
+                        if prefix { &semver.format.prefix } else { "" },
                         semver.version.major,
                         semver.version.minor,
                         semver.version.patch,
@@ -570,7 +570,7 @@ delimiter = "{}"
                 } else {
                     Ok(format!(
                         "{}{}.{}.{}",
-                        semver.format.prefix,
+                        if prefix { &semver.format.prefix } else { "" },
                         semver.version.major,
                         semver.version.minor,
                         semver.version.patch

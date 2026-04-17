@@ -108,6 +108,8 @@ bump --calendar [BUMPFILE]  # Updates to current date (e.g., 2026.02.25)
 
 ### Code Generation
 
+**PRO TIP**: Add generated version files to `.gitignore` to avoid "behind by one" issues
+
 ```bash
 # Generate version files for different languages
 bump gen --lang c --output version.h [BUMPFILE]
@@ -129,42 +131,22 @@ bump gen --lang c --output version.h custom.toml
 ### Git Integration
 
 ```bash
-# Create a git tag for the current version
+# Create a git tag for the current version, message is conventional commit format
 bump tag [BUMPFILE]
 
 # Create a tag with custom message
 bump tag --message "Release v1.2.3 - Critical security fix" [BUMPFILE]
 bump tag -m "Custom message" [BUMPFILE]
-
-# Commit and tag in one step
-bump --minor
-git commit -am "Bump to $(bump -p)"
-bump tag
 ```
 
-### File Updates
+### `bump update`
+
+> Currently supports `Cargo.toml` and `pyproject.toml`, send a PR for additional file format conventions!
 
 ```bash
-# Update version in known file types (currently supports Cargo.toml)
 bump update Cargo.toml [BUMPFILE]
-
-# This reads version from bump.toml and updates it in Cargo.toml
-# Use with custom configuration file
-bump update Cargo.toml custom.toml
+bump update pyproject.toml [BUMPFILE]
 ```
-
-## Features
-
-- **Dual Versioning Schemes**: Choose between **SemVer** (semantic versioning) or **CalVer** (calendar versioning) based on your project needs
-- **TOML Configuration**: Declare your version in a file and `bump` will modify it automatically. Define behavior and preference from the same file. Comments are preserved. Create one with `bump init`
-- **Easy Build System Integration**: Define in _one place_ and use everywhere with `bump --print`, `bump --print-base`, `bump --print-full`, or `bump --print-with-timestamp`
-- **Semantic Versioning**: Full support for `--major`, `--minor`, `--patch`, `--candidate`, and `--release` bumps with configurable promotion strategies
-- **Calendar Versioning**: Date-based versions with strftime format patterns (e.g., `2026.02.25`) and automatic revision increment for same-day releases via `--calendar`
-- **Multi-Language Support**: Generate version files for C, Go, Java, C#, and Python - useful for injecting version strings into binaries
-- **Git Integration**: Automatic SHA appending for untagged commits, branch detection, smart tag conflict handling, and tag creation with custom messages
-- **File Updates**: Automatically update versions in known file types (e.g., `Cargo.toml`)
-- **Flexible Output**: Support for multiple output files from a single `bump.toml`
-- **Comment Preservation**: All comments and formatting in your TOML file are preserved across updates
 
 
 ## Documentation
@@ -186,7 +168,7 @@ if your token differs from the default `GITHUB_TOKEN`
 ```yaml
 - uses: launchfirestorm/bump@v6
   with:
-    github-token: ${{ secrets.YOUR_TOKEN_HERE }}
+    token: ${{ secrets.YOUR_TOKEN_HERE }}
 ```
 
 ## [MIT License](./LICENSE)
