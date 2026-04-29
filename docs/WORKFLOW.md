@@ -29,7 +29,7 @@ bump gen --lang c --output version.h  # Generates: 0.1.0+a1b2c3d (untagged)
 
 ## Multiple BUMPFILE Pipeline
 
-The glory of `bump` is that you can version MUTLIPLE things at once! 
+The glory of `bump` is that you can version MULTIPLE things at once! 
 
 ### 1. Bump, tag, and push
 ```bash
