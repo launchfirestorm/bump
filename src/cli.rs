@@ -114,6 +114,7 @@ pub fn cli() -> Command {
                 .value_name("LABEL")
                 .value_parser(clap::value_parser!(String))
                 .num_args(1)
+                .conflicts_with_all(["point-release", "candidate-release", "calendar-release", "meta"])
                 .help("Prefix the development suffix with a phase label (e.g. 'dev', 'rc'): 1.7.0-dev.4"),
         )
         .arg(
