@@ -475,11 +475,7 @@ delimiter = "{}"
             semver.candidate.delimiter,
             semver.version.candidate
         );
-
-        // The development suffix, optionally prefixed with a phase label
-        // (e.g. "dev"/"rc") so a single bump.toml can serve every branch:
-        //   git_sha + --label dev  -> dev.a1b2c3d
-        //   distance + --label rc  -> rc.4
+        
         let dev_suffix = || -> Result<String, BumpError> {
             let raw = get_development_suffix(&semver.development.promotion)?;
             Ok(match label {
