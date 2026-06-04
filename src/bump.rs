@@ -341,7 +341,7 @@ pub fn get_development_suffix(promotion_strategy: &str) -> Result<String, BumpEr
 // Count of commits since the latest tag
 pub fn get_commit_distance() -> Result<String, BumpError> {
     match get_git_tag(true) {
-        Ok(tag) => run_git(&format!("rev-list --count {tag}..HEAD")),
+        Ok(tag) => run_git(&format!("rev-list --count refs/tags/{tag}..HEAD")),
         Err(_) => run_git("rev-list --count HEAD"),
     }
 }
