@@ -235,7 +235,7 @@ impl Version {
 
             // Validate development promotion strategy
             match semver.development.promotion.as_str() {
-                "git_sha" | "branch" | "full" => (),
+                "git_sha" | "branch" | "full" | "distance" => (),
                 _ => {
                     println!(
                         "invalid development promotion strategy: {}",
@@ -304,9 +304,10 @@ promotion = "{}"
 delimiter = "{}"
 
 # Development suffix strategies:
-#  - "git_sha" : append 7 char sha1 of the current commit (default)
-#  - "branch"  : append the current git branch name
-#  - "full"    : append <branch>_<sha1>
+#  - "git_sha"  : append 7 char sha1 of the current commit (default)
+#  - "branch"   : append the current git branch name
+#  - "full"     : append <branch>_<sha1>
+#  - "distance" : append commits since the latest reachable tag (pair with --label)
 [semver.development]
 promotion = "{}"
 delimiter = "{}"
@@ -436,7 +437,7 @@ delimiter = "{}"
         }
     }
 
-    fn get_semver_string(semver: &SemVer) -> Result<String, BumpError> {
+    fn get_semver_string(semver: &SemVer, label: Option<&str>) -> Result<String, BumpError> {
         if !is_git_repository() {
             // Not in a git repository - return base version without development suffix
             if semver.version.candidate > 0 {
@@ -475,6 +476,18 @@ delimiter = "{}"
             semver.version.candidate
         );
 
+        // The development suffix, optionally prefixed with a phase label
+        // (e.g. "dev"/"rc") so a single bump.toml can serve every branch:
+        //   git_sha + --label dev  -> dev.a1b2c3d
+        //   distance + --label rc  -> rc.4
+        let dev_suffix = || -> Result<String, BumpError> {
+            let raw = get_development_suffix(&semver.development.promotion)?;
+            Ok(match label {
+                Some(l) if !l.is_empty() => format!("{l}.{raw}"),
+                _ => raw,
+            })
+        };
+
         let version_string = match (tagged, semver.version.candidate) {
             (true, 0) => base,
             (true, _) => candidate_str,
@@ -482,13 +495,13 @@ delimiter = "{}"
                 "{}{}{}",
                 base,
                 semver.development.delimiter,
-                get_development_suffix(&semver.development.promotion)?
+                dev_suffix()?
             ),
             (false, _) => format!(
                 "{}{}{}",
                 candidate_str,
                 semver.development.delimiter,
-                get_development_suffix(&semver.development.promotion)?
+                dev_suffix()?
             ),
         };
 
@@ -523,10 +536,10 @@ delimiter = "{}"
         }
     }
 
-    pub fn to_string(&self) -> Result<String, BumpError> {
+    pub fn to_string(&self, label: Option<&str>) -> Result<String, BumpError> {
         match &self.version_type {
             VersionType::SemVer ( semver ) => {
-                Version::get_semver_string(semver)
+                Version::get_semver_string(semver, label)
             }
             VersionType::CalVer ( calver ) => {
                 Version::get_calver_string(calver)

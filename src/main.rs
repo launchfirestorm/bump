@@ -64,7 +64,8 @@ fn main() -> ExitCode {
                 } else {
                     bump::PrintType::Root
                 };
-                egress(bump::print(&version, &print_type))
+                let label = matches.get_one::<String>("label").map(|s| s.as_str());
+                egress(bump::print(&version, &print_type, label))
             } else if matches.contains_id("point-release")
                 || matches.contains_id("candidate-release")
                 || matches.contains_id("calendar-release")

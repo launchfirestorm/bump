@@ -164,7 +164,7 @@ pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), 
     Ok(())
 }
 
-pub fn print(version: &Version, print_type: &PrintType) -> Result<(), BumpError> {
+pub fn print(version: &Version, print_type: &PrintType, label: Option<&str>) -> Result<(), BumpError> {
     match print_type {
         PrintType::Root => {
             let version_str = version.to_root_string(true)?;
@@ -175,12 +175,12 @@ pub fn print(version: &Version, print_type: &PrintType) -> Result<(), BumpError>
             print!("{}", base_str);
         }
         PrintType::Full => {
-            let version_str = version.to_string()?;
+            let version_str = version.to_string(label)?;
             print!("{}", version_str);
         }
         PrintType::Timestamp => {
             let timestamp= version.get_timestamp()?;
-            let version_str = version.to_string()?;
+            let version_str = version.to_string(label)?;
             print!("{} {}", version_str, timestamp);
         }
     }
@@ -333,7 +333,18 @@ pub fn get_development_suffix(promotion_strategy: &str) -> Result<String, BumpEr
             let sha = get_git_commit_sha()?;
             Ok(format!("{}_{}", branch, sha))
         }
+        "distance" => get_commit_distance(),
         _ => get_git_commit_sha(), // default to git_sha
+    }
+}
+
+// Count of commits since the latest reachable tag, à la `git describe`.
+// Monotonic along a single line of history, computed at print time with no
+// stored state. Falls back to the total commit count when no tag exists yet.
+pub fn get_commit_distance() -> Result<String, BumpError> {
+    match get_git_tag(true) {
+        Ok(tag) => run_git(&format!("rev-list --count {tag}..HEAD")),
+        Err(_) => run_git("rev-list --count HEAD"),
     }
 }
 
@@ -376,7 +387,7 @@ pub fn build_tag_name(version: &Version) -> Result<String, BumpError> {
                 )
             }
         }
-        VersionType::CalVer { .. } => version.to_string()?,
+        VersionType::CalVer { .. } => version.to_string(None)?,
     };
 
     Ok(tag_name)

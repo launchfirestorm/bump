@@ -109,6 +109,14 @@ pub fn cli() -> Command {
                 .help("Print full version without newline, with timestamp (SemVer only)"),
         )
         .arg(
+            Arg::new("label")
+                .long("label")
+                .value_name("LABEL")
+                .value_parser(clap::value_parser!(String))
+                .num_args(1)
+                .help("Prefix the development suffix with a phase label (e.g. 'dev', 'rc'): 1.7.0-dev.4"),
+        )
+        .arg(
             Arg::new("prefix")
                 .long("prefix")
                 .value_name("PREFIX")

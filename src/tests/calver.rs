@@ -44,7 +44,7 @@ fn to_string_calver_includes_revision_only_when_nonzero() {
     let _repo = create_temp_dir();
     let mut version = make_calver("v");
 
-    let base = version.to_string().unwrap();
+    let base = version.to_string(None).unwrap();
     assert!(!base.contains("-0"));
 
     match &mut version.version_type {
@@ -52,7 +52,7 @@ fn to_string_calver_includes_revision_only_when_nonzero() {
         _ => panic!("expected CalVer variant"),
     }
 
-    let with_revision = version.to_string().unwrap();
+    let with_revision = version.to_string(None).unwrap();
     assert!(with_revision.ends_with("-2"));
 }
 
@@ -184,7 +184,7 @@ fn build_tag_name_for_calver_uses_rendered_version_string() {
     let mut version = make_calver("v");
 
     let stable_tag = build_tag_name(&version).unwrap();
-    let stable_text = version.to_string().unwrap();
+    let stable_text = version.to_string(None).unwrap();
     assert_eq!(stable_tag, stable_text);
 
     if let VersionType::CalVer(calver) = &mut version.version_type {

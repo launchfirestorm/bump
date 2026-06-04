@@ -59,7 +59,7 @@ fn c_output(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    let version_string = version.to_string()?;
+    let version_string = version.to_string(None)?;
     
     let content = match &version.version_type {
         VersionType::CalVer { .. } => {
@@ -127,7 +127,7 @@ fn go_output(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    let version_string = version.to_string()?;
+    let version_string = version.to_string(None)?;
     let content = match &version.version_type {
         VersionType::CalVer { .. } => {
             // CalVer: only output STRING
@@ -190,7 +190,7 @@ fn java_output(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    let version_string = version.to_string()?;
+    let version_string = version.to_string(None)?;
     
     let content = match &version.version_type {
         VersionType::CalVer { .. } => {
@@ -254,7 +254,7 @@ fn csharp_output(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    let version_string = version.to_string()?;
+    let version_string = version.to_string(None)?;
     
     let content = match &version.version_type {
         VersionType::CalVer { .. } => {
@@ -318,7 +318,7 @@ fn python_output(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    let version_string = version.to_string()?;
+    let version_string = version.to_string(None)?;
     
     let content = match &version.version_type {
         VersionType::CalVer { .. } => {
