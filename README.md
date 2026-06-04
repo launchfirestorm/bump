@@ -62,7 +62,7 @@ This creates a **"BUMPFILE"** defaulted to `bump.toml` in your current directory
 bump --print [BUMPFILE]                    # Root version (prefix + candidate suffix if present)
 bump --print-base [BUMPFILE]               # Base semver only: MAJOR.MINOR.PATCH (SemVer only)
 bump --print-full [BUMPFILE]               # Full version with development suffix policy (git_sha/branch/full/distance)
-bump --print-full --label dev [BUMPFILE]   # Prefix the development suffix with a phase label -> 1.7.0-dev.4
+bump --print-full --label dev [BUMPFILE]   # Prefix the dev suffix with a phase label (e.g. dev/rc)
 bump --print-with-timestamp [BUMPFILE]     # Full version + configured build timestamp (SemVer only)
 ```
 

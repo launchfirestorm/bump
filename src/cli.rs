@@ -99,6 +99,7 @@ pub fn cli() -> Command {
                 .long("print-full")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
+                .group("dev-print")
                 .help("Print full version without newline, with prefix and with development promotion"),
         )
         .arg(
@@ -106,6 +107,7 @@ pub fn cli() -> Command {
                 .long("print-with-timestamp")
                 .action(clap::ArgAction::SetTrue)
                 .group("print-group")
+                .group("dev-print")
                 .help("Print full version without newline, with timestamp (SemVer only)"),
         )
         .arg(
@@ -115,7 +117,8 @@ pub fn cli() -> Command {
                 .value_parser(clap::value_parser!(String))
                 .num_args(1)
                 .conflicts_with_all(["point-release", "candidate-release", "calendar-release", "meta"])
-                .help("Prefix the development suffix with a phase label (e.g. 'dev', 'rc'): 1.7.0-dev.4"),
+                .requires("dev-print")
+                .help("Prefix the development suffix with a phase label (e.g. 'dev', 'rc'); only with --print-full/--print-with-timestamp"),
         )
         .arg(
             Arg::new("prefix")
