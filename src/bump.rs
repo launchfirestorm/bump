@@ -338,9 +338,7 @@ pub fn get_development_suffix(promotion_strategy: &str) -> Result<String, BumpEr
     }
 }
 
-// Count of commits since the latest reachable tag, à la `git describe`.
-// Monotonic along a single line of history, computed at print time with no
-// stored state. Falls back to the total commit count when no tag exists yet.
+// Count of commits since the latest tag
 pub fn get_commit_distance() -> Result<String, BumpError> {
     match get_git_tag(true) {
         Ok(tag) => run_git(&format!("rev-list --count {tag}..HEAD")),
