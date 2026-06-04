@@ -125,8 +125,6 @@ fn to_string_semver_with_git_repo_has_development_suffix_when_untagged() {
     assert_eq!(text, format!("v1.2.3+{}", sha));
 }
 
-// Build a SemVer Version configured for the "distance" development strategy
-// (commits-since-tag placed in the pre-release slot via the "-" delimiter).
 fn make_distance_version(repo_path: &std::path::Path) -> Version {
     let mut semver = default_semver("v", 1, 2, 3, 0);
     semver.development.promotion = "distance".to_string();
@@ -139,13 +137,12 @@ fn make_distance_version(repo_path: &std::path::Path) -> Version {
 
 #[test]
 fn distance_counts_commits_since_latest_tag() {
-    let repo = create_temp_git_repo(true); // tags v1.2.3 at the initial commit
+    let repo = create_temp_git_repo(true);
     run_git_in(repo.path(), &["commit", "--allow-empty", "-m", "second"]);
     run_git_in(repo.path(), &["commit", "--allow-empty", "-m", "third"]);
 
     let version = make_distance_version(repo.path());
-
-    // 2 commits past the tag, no label -> bare distance in the pre-release slot
+    
     assert_eq!(version.to_string(None).unwrap(), "v1.2.3-2");
 }
 
@@ -156,13 +153,12 @@ fn distance_with_label_prefixes_the_pre_release() {
 
     let version = make_distance_version(repo.path());
 
-    // 1 commit past the tag, labelled "dev" -> 1.7.0-dev.4 shape
     assert_eq!(version.to_string(Some("dev")).unwrap(), "v1.2.3-dev.1");
 }
 
 #[test]
 fn distance_falls_back_to_total_commit_count_without_tags() {
-    let repo = create_temp_git_repo(false); // no tag; single initial commit
+    let repo = create_temp_git_repo(false);
     let version = make_distance_version(repo.path());
 
     assert_eq!(version.to_string(Some("dev")).unwrap(), "v1.2.3-dev.1");
@@ -170,16 +166,15 @@ fn distance_falls_back_to_total_commit_count_without_tags() {
 
 #[test]
 fn label_is_ignored_on_a_tagged_release_commit() {
-    let repo = create_temp_git_repo(true); // HEAD is exactly tagged v1.2.3
+    let repo = create_temp_git_repo(true);
     let version = make_distance_version(repo.path());
 
-    // Tagged commits emit the bare base regardless of label.
     assert_eq!(version.to_string(Some("rc")).unwrap(), "v1.2.3");
 }
 
 #[test]
 fn label_prefixes_any_development_strategy() {
-    let repo = create_temp_git_repo(false); // untagged -> git_sha suffix
+    let repo = create_temp_git_repo(false);
     let version = Version {
         version_type: VersionType::SemVer(default_semver("v", 1, 2, 3, 0)),
         path: repo.path().join("bump.toml"),
