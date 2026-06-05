@@ -19,8 +19,7 @@ pub struct TimestampTable {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VersionTable {
-    #[serde(rename = "type")]
-    pub _type: String,
+    pub mode: String,
     pub prefix: String,
     pub delimiter: String,
     pub major: u32,
@@ -32,6 +31,7 @@ pub struct VersionTable {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseTable {
+    pub prefix: String,
     pub name: String,
     pub delimiter: String,
     pub distance: u32,
@@ -39,8 +39,7 @@ pub struct PhaseTable {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuffixTable {
-    #[serde(rename = "type")]
-    pub _type: String,
+    pub mode: String,
     pub delimiter: String,
 }
 
@@ -49,7 +48,6 @@ pub struct Version {
     #[serde(skip)]
     pub path: PathBuf,
     pub timestamp: TimestampTable,
-    // #[serde(flatten)]
     pub version: VersionTable,
     pub phase: PhaseTable,
     pub suffix: SuffixTable,
@@ -64,7 +62,7 @@ impl Version {
                 last: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             },
             version: VersionTable {
-                _type: "semver".to_string(),
+                mode: "semver".to_string(),
                 prefix: "v".to_string(),
                 delimiter: ".".to_string(),
                 major: 0,
@@ -72,12 +70,13 @@ impl Version {
                 patch: Some(0),
             },
             phase: PhaseTable {
+                prefix: "-".to_string(),
                 name: "".to_string(),
                 delimiter: "-".to_string(),
                 distance: 0,
             },
             suffix: SuffixTable {
-                _type: "git_sha".to_string(),
+                mode: "git_sha".to_string(),
                 delimiter: "+".to_string(),
             },
         }
@@ -99,7 +98,7 @@ format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
 last = "{}"
 
 [version]
-type = "semver"  # or "calver"
+mode = "semver"  # or "calver"
 prefix = "v"
 delimiter = "."
 major = 0  
@@ -107,6 +106,7 @@ minor = 1  # [optional] field can be removed if not needed
 patch = 0  # [optional] can be removed if not needed
 
 [phase]  
+prefix = "-"
 name = ""
 delimiter = "."
 distance = 0
@@ -115,7 +115,7 @@ distance = 0
 #  - "git_sha"  : append 7 char sha1 of the current commit (default)
 #  - "branch"   : append the current git branch name
 [suffix]
-type = "git_sha"
+mode = "git_sha"
 delimiter = "+"
         "#, current_timestamp);
         fs::write(&self.path, content).map_err(BumpError::IoError)
@@ -155,23 +155,23 @@ delimiter = "+"
             }
         };
 
-        match version_parsed.version._type.as_str() {
+        match version_parsed.version.mode.as_str() {
             "semver"|"calver" => (),
             _ => {
                 return Err(BumpError::ParseError(format!(
                     "Invalid version type '{}' in '{}'. Expected 'semver' or 'calver'.",
-                    version_parsed.version._type,
+                    version_parsed.version.mode,
                     path.display()
                 )));
             }
         }
 
-        match version_parsed.suffix._type.as_str() {
+        match version_parsed.suffix.mode.as_str() {
             "git_sha"|"branch" => (),
             _ => {
                 return Err(BumpError::ParseError(format!(
                     "Invalid suffix type '{}' in '{}'. Expected 'git_sha' or 'branch'.",
-                    version_parsed.suffix._type,
+                    version_parsed.suffix.mode,
                     path.display()
                 )));
             }
@@ -197,7 +197,7 @@ delimiter = "+"
         doc["timestamp"]["format"] = value(&self.timestamp.format);
         doc["timestamp"]["last"] = value(&self.timestamp.last);
 
-        doc["version"]["type"] = value(&self.version._type);
+        doc["version"]["mode"] = value(&self.version.mode);
         doc["version"]["prefix"] = value(&self.version.prefix);
         doc["version"]["delimiter"] = value(&self.version.delimiter);
         doc["version"]["major"] = value(self.version.major as i64);
@@ -212,11 +212,12 @@ delimiter = "+"
             doc["version"].as_table_mut().unwrap().remove("patch");
         }
 
+        doc["phase"]["prefix"] = value(&self.phase.prefix);
         doc["phase"]["name"] = value(&self.phase.name);
         doc["phase"]["delimiter"] = value(&self.phase.delimiter);
         doc["phase"]["distance"] = value(self.phase.distance as i64);
 
-        doc["suffix"]["type"] = value(&self.suffix._type);
+        doc["suffix"]["mode"] = value(&self.suffix.mode);
         doc["suffix"]["delimiter"] = value(&self.suffix.delimiter);
 
         fs::write(self.path.as_path(), doc.to_string()).map_err(BumpError::IoError)
@@ -287,36 +288,24 @@ delimiter = "+"
 
     // empty phase name means no phase (formal release)
     fn get_phase(&self) -> String {
-        match self.version._type.as_str() {
-            "semver" => {
-                if self.phase.name.is_empty() {
-                    "".to_string()
-                } else if self.phase.distance > 0 {
-                    format!(
-                        "{}{}{}",
-                        self.phase.name,
-                        self.phase.delimiter,
-                        self.phase.distance,
-                    )
-                } else {
-                    self.phase.name.to_string()
-                }
-
-            },
-            "calver" => {
-                if self.phase.name.is_empty() && self.phase.distance > 0 {
-                    format!(
-                        "{}{}",
-                        &self.phase.delimiter,
-                        &self.phase.distance,
-                    )
-                } else if self.phase.name.is_empty() && self.phase.distance == 0 {
-                    "".to_string()
-                } else {
-                    format!("{}{}{}", self.phase.name, self.phase.delimiter, self.phase.distance)
-                }
-            },
-            _ => "".to_string(), // should never happen due to validation in from_file
+        if self.phase.name.is_empty() && self.phase.distance == 0 {
+            "".to_string()
+        } else if self.phase.name.is_empty() && self.phase.distance > 0 {
+            format!("{}{}", self.phase.prefix, self.phase.distance)
+        } else if self.phase.distance == 0 {
+            format!(
+                "{}{}",
+                self.phase.prefix,
+                self.phase.name,
+            )
+        } else {
+            format!(
+                "{}{}{}{}",
+                self.phase.prefix,
+                self.phase.name,
+                self.phase.delimiter,
+                self.phase.distance
+            )
         }
     }
 
@@ -324,7 +313,7 @@ delimiter = "+"
         if !is_git_repository() {
             return Err(BumpError::Git("Not a git repository".to_string()));
         }
-        match self.suffix._type.as_str() {
+        match self.suffix.mode.as_str() {
             "git_sha" => {
                 let sha = get_git_commit_sha()?;
                 Ok(format!("{}{}", self.suffix.delimiter, sha))
@@ -337,40 +326,22 @@ delimiter = "+"
         }
     }
 
-    // // internal call to give `apply()` the version string without dev suffixes
-    // pub fn to_root_string(&self, prefix: bool) -> Result<String, BumpError> {
-    //     match &self.version_type {
-    //         VersionType::SemVer ( semver ) => {
-    //             if semver.version.candidate > 0 {
-    //                 Ok(format!(
-    //                     "{}{}.{}.{}{}{}",
-    //                     if prefix { &semver.format.prefix } else { "" },
-    //                     semver.version.major,
-    //                     semver.version.minor,
-    //                     semver.version.patch,
-    //                     semver.candidate.delimiter,
-    //                     semver.version.candidate
-    //                 ))
-    //             } else {
-    //                 Ok(format!(
-    //                     "{}{}.{}.{}",
-    //                     if prefix { &semver.format.prefix } else { "" },
-    //                     semver.version.major,
-    //                     semver.version.minor,
-    //                     semver.version.patch
-    //                 ))
-    //             }
-    //         }
-    //         VersionType::CalVer ( calver ) => {
-    //             Version::get_calver_string(calver)
-    //         }
-    //     }
-    // }
+    fn right_mode(&self, expected_mode: &str) -> Result<(), BumpError> {
+        if self.version.mode != expected_mode {
+            Err(BumpError::LogicError(format!(
+                "Operation only valid for version.type = '{}'",
+                expected_mode
+            )))
+        } else {
+            Ok(())
+        }
+    }
 
     pub fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         let now = chrono::Utc::now();
         match bump_type {
             BumpType::Major => {
+                self.right_mode("semver")?;
                 self.version.major += 1;
                 self.version.minor = if self.version.minor.is_some() { Some(0) } else { None };
                 self.version.patch = if self.version.patch.is_some() { Some(0) } else { None };
@@ -378,32 +349,30 @@ delimiter = "+"
                 self.phase.distance = 0;
             }
             BumpType::Minor => {
+                self.right_mode("semver")?;
                 self.version.minor = Some(self.version.minor.unwrap_or(0) + 1);
                 self.version.patch = if self.version.patch.is_some() { Some(0) } else { None };
                 self.phase.name = "".to_string();
                 self.phase.distance = 0;
             }
             BumpType::Patch => {
+                self.right_mode("semver")?;
                 self.version.patch = if self.version.patch.is_some() { Some(self.version.patch.unwrap_or(0) + 1) } else { None };
                 self.phase.name = "".to_string();
                 self.phase.distance = 0;
             }
             BumpType::Phase(cli_phase_name) => {
-                let current_phase = &self.phase.name;
-                if *cli_phase_name == "__increment__" || current_phase == cli_phase_name {
-                    self.phase.distance += 1;
-                } else {
+                // BOTH modes have phases
+                if *cli_phase_name != "__increment__" {
                     // different phase, switch to it and reset distance
                     self.phase.name = cli_phase_name.clone();
-                    self.phase.distance = 0;
+                    self.phase.distance = 1;
+                } else {
+                    self.phase.distance += 1;
                 }
             }
             BumpType::Calendar => {
-                if self.version._type != "calver" {
-                    return Err(BumpError::LogicError(
-                        "Calendar bump is only applicable version.type = \"calver\"".to_string()
-                    ));
-                }
+                self.right_mode("calver")?;
                 if now.year() as u32 == self.version.major &&
                    now.month() == self.version.minor.unwrap_or(0) &&
                    now.day() == self.version.patch.unwrap_or(0) {

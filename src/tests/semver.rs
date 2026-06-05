@@ -9,7 +9,7 @@ fn from_file_reads_semver_schema() {
 
     let version = Version::from_file(&bump_path).unwrap();
 
-    assert_eq!(version.version._type, "semver");
+    assert_eq!(version.version.mode, "semver");
     assert_eq!(version.version.prefix, "v");
     assert_eq!(version.version.major, 1);
     assert_eq!(version.version.minor, Some(2));
@@ -39,7 +39,7 @@ format = "%Y-%m-%d %H:%M:%S %Z"
 last = "2026-01-01 00:00:00 UTC"
 
 [version]
-type = "nope"
+mode = "nope"
 prefix = "v"
 delimiter = "."
 major = 1
@@ -52,7 +52,7 @@ delimiter = "-"
 distance = 0
 
 [suffix]
-type = "git_sha"
+mode = "git_sha"
 delimiter = "+"
 "#;
     write_bump_toml(&bump_path, content);
@@ -73,7 +73,7 @@ format = "%Y-%m-%d %H:%M:%S %Z"
 last = "2026-01-01 00:00:00 UTC"
 
 [version]
-type = "semver"
+mode = "semver"
 prefix = "v"
 delimiter = "."
 major = 1
@@ -86,7 +86,7 @@ delimiter = "-"
 distance = 0
 
 [suffix]
-type = "unknown"
+mode = "unknown"
 delimiter = "+"
 "#;
     write_bump_toml(&bump_path, content);

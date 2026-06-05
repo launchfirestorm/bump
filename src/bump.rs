@@ -23,7 +23,6 @@ pub fn set_test_repo_path(path: Option<PathBuf>) {
 }
 
 pub enum BumpType {
-    // Prefix(String), // prefix is not a bump type
     Major,
     Minor,
     Patch,

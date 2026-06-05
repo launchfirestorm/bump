@@ -8,7 +8,7 @@ fn calendar_bump_updates_date_fields_for_calver() {
 
     version.bump(&BumpType::Calendar).unwrap();
 
-    assert_eq!(version.version._type, "calver");
+    assert_eq!(version.version.mode, "calver");
     assert_eq!(version.version.major, before.year() as u32);
     assert_eq!(version.version.minor, Some(before.month()));
     assert_eq!(version.version.patch, Some(before.day()));
@@ -37,7 +37,7 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
             last: "2026-01-01 00:00:00 UTC".to_string(),
         },
         version: VersionTable {
-            _type: "calver".to_string(),
+            mode: "calver".to_string(),
             prefix: "".to_string(),
             delimiter: ".".to_string(),
             major: now.year() as u32,
@@ -50,7 +50,7 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
             distance: 4,
         },
         suffix: SuffixTable {
-            _type: "git_sha".to_string(),
+            mode: "git_sha".to_string(),
             delimiter: "+".to_string(),
         },
     };

@@ -148,7 +148,7 @@ format = "%Y-%m-%d %H:%M:%S %Z"
 last = "2026-01-01 00:00:00 UTC"
 
 [version]
-type = "semver"
+mode = "semver"
 prefix = "v"
 delimiter = "."
 major = {}
@@ -161,7 +161,7 @@ delimiter = "-"
 distance = {}
 
 [suffix]
-type = "git_sha"
+mode = "git_sha"
 delimiter = "+"
 "#,
         major, minor, patch, candidate
@@ -177,7 +177,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             last: "2026-01-01 00:00:00 UTC".to_string(),
         },
         version: VersionTable {
-            _type: "semver".to_string(),
+            mode: "semver".to_string(),
             prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             major,
@@ -190,7 +190,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             distance: candidate,
         },
         suffix: SuffixTable {
-            _type: "git_sha".to_string(),
+            mode: "git_sha".to_string(),
             delimiter: "+".to_string(),
         },
     }
@@ -204,7 +204,7 @@ pub fn make_calver(prefix: &str) -> Version {
             last: "2026-01-01 00:00:00 UTC".to_string(),
         },
         version: VersionTable {
-            _type: "calver".to_string(),
+            mode: "calver".to_string(),
             prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             major: 2026,
@@ -217,7 +217,7 @@ pub fn make_calver(prefix: &str) -> Version {
             distance: 0,
         },
         suffix: SuffixTable {
-            _type: "git_sha".to_string(),
+            mode: "git_sha".to_string(),
             delimiter: "+".to_string(),
         },
     }
