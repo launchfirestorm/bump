@@ -156,6 +156,7 @@ minor = {}
 patch = {}
 
 [phase]
+prefix = "-"
 name = "rc"
 delimiter = "-"
 distance = {}
@@ -185,6 +186,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             patch: Some(patch),
         },
         phase: PhaseTable {
+            prefix: "-".to_string(),
             name: if candidate > 0 { "rc".to_string() } else { "".to_string() },
             delimiter: "-".to_string(),
             distance: candidate,
@@ -212,6 +214,7 @@ pub fn make_calver(prefix: &str) -> Version {
             patch: Some(5),
         },
         phase: PhaseTable {
+            prefix: "-".to_string(),
             name: "".to_string(),
             delimiter: "-".to_string(),
             distance: 0,

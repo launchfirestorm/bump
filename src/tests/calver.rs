@@ -21,7 +21,7 @@ fn calendar_bump_rejected_for_semver() {
     let err = version.bump(&BumpType::Calendar).unwrap_err();
     match err {
         BumpError::LogicError(msg) => {
-            assert!(msg.contains("Calendar bump is only applicable"));
+            assert!(msg.contains("Operation only valid for version.type = 'calver'"));
         }
         _ => panic!("expected LogicError"),
     }
@@ -45,6 +45,7 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
             patch: Some(now.day()),
         },
         phase: PhaseTable {
+            prefix: "-".to_string(),
             name: "".to_string(),
             delimiter: "-".to_string(),
             distance: 4,

@@ -47,6 +47,7 @@ minor = 0
 patch = 0
 
 [phase]
+prefix = "-"
 name = ""
 delimiter = "-"
 distance = 0
@@ -81,6 +82,7 @@ minor = 0
 patch = 0
 
 [phase]
+prefix = "-"
 name = ""
 delimiter = "-"
 distance = 0
@@ -116,9 +118,10 @@ fn create_file_writes_template() {
 #[test]
 fn to_string_regular_uses_prefix_base_and_phase() {
     let mut version = make_semver("v", 1, 2, 3, 2);
+    version.phase.prefix = "-".to_string();
     version.phase.delimiter = "-".to_string();
 
-    assert_eq!(version.to_string(&PrintType::Regular).unwrap(), "v1.2.3rc-2");
+    assert_eq!(version.to_string(&PrintType::Regular).unwrap(), "v1.2.3-rc-2");
 }
 
 #[test]
@@ -193,7 +196,7 @@ fn bump_phase_new_name_switches_and_resets_distance() {
     version.bump(&BumpType::Phase("beta".to_string())).unwrap();
 
     assert_eq!(version.phase.name, "beta");
-    assert_eq!(version.phase.distance, 0);
+    assert_eq!(version.phase.distance, 1);
 }
 
 #[test]
