@@ -4,12 +4,8 @@ use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
-pub use crate::bump::{
-    build_tag_name, create_git_tag, BumpError, BumpType, PointType,
-};
-pub use crate::version::{
-    default_calver, default_semver, SemVer, Version, VersionType,
-};
+pub use crate::bump::{create_git_tag, BumpError, BumpType, PrintType};
+pub use crate::version::{PhaseTable, SuffixTable, TimestampTable, Version, VersionTable};
 
 pub struct TestRepo {
     _temp_dir: TempDir,
@@ -147,22 +143,25 @@ pub fn write_bump_toml(path: &Path, content: &str) {
 pub fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
     let (major, minor, patch, candidate) = version;
     let content = format!(
-        r#"[semver.format]
+        r#"[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "2026-01-01 00:00:00 UTC"
+
+[version]
+type = "semver"
 prefix = "v"
 delimiter = "."
-
-[semver.version]
 major = {}
 minor = {}
 patch = {}
-candidate = {}
 
-[semver.candidate]
-promotion = "minor"
-delimiter = "-rc"
+[phase]
+name = "rc"
+delimiter = "-"
+distance = {}
 
-[semver.development]
-promotion = "git_sha"
+[suffix]
+type = "git_sha"
 delimiter = "+"
 "#,
         major, minor, patch, candidate
@@ -170,49 +169,57 @@ delimiter = "+"
     fs::write(path, content).unwrap();
 }
 
-pub fn write_calver_config(path: &Path, year: &str, month: Option<&str>, day: Option<&str>, revision: u32) {
-    let month_fmt = month
-        .map(|m| format!("month = \"{}\"\n", m))
-        .unwrap_or_default();
-    let day_fmt = day
-        .map(|d| format!("day = \"{}\"\n", d))
-        .unwrap_or_default();
-
-    let content = format!(
-        r#"[calver.format]
-prefix = ""
-delimiter = "."
-year = "%Y"
-{}{}
-[calver.version]
-year = "{}"
-{}{}
-[calver.conflict]
-revision = {}
-delimiter = "-"
-"#,
-        if month.is_some() { "month = \"%m\"\n" } else { "" },
-        if day.is_some() { "day = \"%d\"\n" } else { "" },
-        year,
-        month_fmt,
-        day_fmt,
-        revision,
-    );
-
-    fs::write(path, content).unwrap();
-}
-
 pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: u32) -> Version {
     Version {
-        version_type: VersionType::SemVer(default_semver(prefix, major, minor, patch, candidate)),
         path: PathBuf::from("test.toml"),
+        timestamp: TimestampTable {
+            format: "%Y-%m-%d %H:%M:%S %Z".to_string(),
+            last: "2026-01-01 00:00:00 UTC".to_string(),
+        },
+        version: VersionTable {
+            _type: "semver".to_string(),
+            prefix: prefix.to_string(),
+            delimiter: ".".to_string(),
+            major,
+            minor: Some(minor),
+            patch: Some(patch),
+        },
+        phase: PhaseTable {
+            name: if candidate > 0 { "rc".to_string() } else { "".to_string() },
+            delimiter: "-".to_string(),
+            distance: candidate,
+        },
+        suffix: SuffixTable {
+            _type: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
     }
 }
 
 pub fn make_calver(prefix: &str) -> Version {
     Version {
-        version_type: VersionType::CalVer(default_calver(prefix)),
         path: PathBuf::from("test.toml"),
+        timestamp: TimestampTable {
+            format: "%Y-%m-%d %H:%M:%S %Z".to_string(),
+            last: "2026-01-01 00:00:00 UTC".to_string(),
+        },
+        version: VersionTable {
+            _type: "calver".to_string(),
+            prefix: prefix.to_string(),
+            delimiter: ".".to_string(),
+            major: 2026,
+            minor: Some(6),
+            patch: Some(5),
+        },
+        phase: PhaseTable {
+            name: "".to_string(),
+            delimiter: "-".to_string(),
+            distance: 0,
+        },
+        suffix: SuffixTable {
+            _type: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
     }
 }
 

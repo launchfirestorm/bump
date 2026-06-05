@@ -2,23 +2,20 @@ use super::*;
 use tempfile::TempDir;
 
 #[test]
-fn from_file_reads_semver_variant() {
+fn from_file_reads_semver_schema() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    write_test_config(&bump_path, (1, 2, 3, 0));
+    write_test_config(&bump_path, (1, 2, 3, 4));
 
     let version = Version::from_file(&bump_path).unwrap();
 
-    match version.version_type {
-        VersionType::SemVer(semver) => {
-            assert_eq!(semver.format.prefix, "v");
-            assert_eq!(semver.version.major, 1);
-            assert_eq!(semver.version.minor, 2);
-            assert_eq!(semver.version.patch, 3);
-            assert_eq!(semver.version.candidate, 0);
-        }
-        _ => panic!("expected SemVer variant"),
-    }
+    assert_eq!(version.version._type, "semver");
+    assert_eq!(version.version.prefix, "v");
+    assert_eq!(version.version.major, 1);
+    assert_eq!(version.version.minor, Some(2));
+    assert_eq!(version.version.patch, Some(3));
+    assert_eq!(version.phase.name, "rc");
+    assert_eq!(version.phase.distance, 4);
 }
 
 #[test]
@@ -34,314 +31,169 @@ fn from_file_missing_file_returns_logic_error() {
 }
 
 #[test]
-fn from_file_rejects_both_semver_and_calver_sections() {
+fn from_file_rejects_invalid_version_type() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = r#"[semver.format]
+    let content = r#"[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "2026-01-01 00:00:00 UTC"
+
+[version]
+type = "nope"
 prefix = "v"
 delimiter = "."
-
-[semver.version]
 major = 1
 minor = 0
 patch = 0
-candidate = 0
 
-[semver.candidate]
-promotion = "minor"
-delimiter = "-rc"
-
-[semver.development]
-promotion = "git_sha"
-delimiter = "+"
-
-[calver.format]
-prefix = ""
-delimiter = "."
-year = "%Y"
-
-[calver.version]
-year = "2026"
-
-[calver.conflict]
-revision = 0
+[phase]
+name = ""
 delimiter = "-"
+distance = 0
+
+[suffix]
+type = "git_sha"
+delimiter = "+"
 "#;
     write_bump_toml(&bump_path, content);
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
-        BumpError::ParseError(msg) => assert!(msg.contains("Cannot have both [semver] and [calver]")),
+        BumpError::ParseError(msg) => assert!(msg.contains("Invalid version type")),
         _ => panic!("expected ParseError"),
     }
 }
 
 #[test]
-fn file_init_writes_semver_template() {
+fn from_file_rejects_invalid_suffix_type() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let version = Version {
-        version_type: VersionType::SemVer(default_semver("v", 1, 2, 3, 4)),
-        path: bump_path.clone(),
-    };
+    let content = r#"[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "2026-01-01 00:00:00 UTC"
 
-    version.file_init().unwrap();
+[version]
+type = "semver"
+prefix = "v"
+delimiter = "."
+major = 1
+minor = 0
+patch = 0
 
-    let content = std::fs::read_to_string(&bump_path).unwrap();
-    assert!(content.contains("[semver.format]"));
-    assert!(content.contains("major = 1"));
-    assert!(content.contains("candidate = 4"));
-    assert!(content.contains("[semver.development]"));
-}
+[phase]
+name = ""
+delimiter = "-"
+distance = 0
 
-#[test]
-fn to_string_semver_in_non_git_repo_is_stable() {
-    let _repo = create_temp_dir();
-    let version = make_semver("v", 1, 2, 3, 0);
+[suffix]
+type = "unknown"
+delimiter = "+"
+"#;
+    write_bump_toml(&bump_path, content);
 
-    let text = version.to_string(None).unwrap();
-    assert_eq!(text, "v1.2.3");
-}
-
-#[test]
-fn to_string_semver_candidate_in_non_git_repo() {
-    let _repo = create_temp_dir();
-    let version = make_semver("v", 1, 2, 3, 2);
-
-    let text = version.to_string(None).unwrap();
-    assert_eq!(text, "v1.2.3-rc2");
-}
-
-#[test]
-fn to_string_semver_with_git_repo_has_development_suffix_when_untagged() {
-    let repo = create_temp_git_repo(false);
-    let version = Version {
-        version_type: VersionType::SemVer(default_semver("v", 1, 2, 3, 0)),
-        path: repo.path().join("bump.toml"),
-    };
-
-    let text = version.to_string(None).unwrap();
-    let sha = git_rev_parse_short_in(repo.path());
-    assert_eq!(text, format!("v1.2.3+{}", sha));
-}
-
-fn make_distance_version(repo_path: &std::path::Path) -> Version {
-    let mut semver = default_semver("v", 1, 2, 3, 0);
-    semver.development.promotion = "distance".to_string();
-    semver.development.delimiter = "-".to_string();
-    Version {
-        version_type: VersionType::SemVer(semver),
-        path: repo_path.join("bump.toml"),
+    let err = Version::from_file(&bump_path).unwrap_err();
+    match err {
+        BumpError::ParseError(msg) => assert!(msg.contains("Invalid suffix type")),
+        _ => panic!("expected ParseError"),
     }
 }
 
 #[test]
-fn distance_counts_commits_since_latest_tag() {
-    let repo = create_temp_git_repo(true);
-    run_git_in(repo.path(), &["commit", "--allow-empty", "-m", "second"]);
-    run_git_in(repo.path(), &["commit", "--allow-empty", "-m", "third"]);
+fn create_file_writes_template() {
+    let temp_dir = TempDir::new().unwrap();
+    let bump_path = temp_dir.path().join("bump.toml");
+    let version = Version::default(&bump_path);
 
-    let version = make_distance_version(repo.path());
-    
-    assert_eq!(version.to_string(None).unwrap(), "v1.2.3-2");
+    version.create_file().unwrap();
+
+    let content = std::fs::read_to_string(&bump_path).unwrap();
+    assert!(content.contains("[timestamp]"));
+    assert!(content.contains("[version]"));
+    assert!(content.contains("[phase]"));
+    assert!(content.contains("[suffix]"));
 }
 
 #[test]
-fn distance_with_label_prefixes_the_pre_release() {
-    let repo = create_temp_git_repo(true);
-    run_git_in(repo.path(), &["commit", "--allow-empty", "-m", "second"]);
+fn to_string_regular_uses_prefix_base_and_phase() {
+    let mut version = make_semver("v", 1, 2, 3, 2);
+    version.phase.delimiter = "-".to_string();
 
-    let version = make_distance_version(repo.path());
-
-    assert_eq!(version.to_string(Some("dev")).unwrap(), "v1.2.3-dev.1");
+    assert_eq!(version.to_string(&PrintType::Regular).unwrap(), "v1.2.3rc-2");
 }
 
 #[test]
-fn distance_falls_back_to_total_commit_count_without_tags() {
+fn to_string_no_prefix_removes_prefix() {
+    let version = make_semver("v", 1, 2, 3, 0);
+    assert_eq!(version.to_string(&PrintType::NoPrefix).unwrap(), "1.2.3");
+}
+
+#[test]
+fn to_string_with_suffix_uses_git_sha_in_git_repo() {
     let repo = create_temp_git_repo(false);
-    let version = make_distance_version(repo.path());
-
-    assert_eq!(version.to_string(Some("dev")).unwrap(), "v1.2.3-dev.1");
-}
-
-#[test]
-fn label_is_ignored_on_a_tagged_release_commit() {
-    let repo = create_temp_git_repo(true);
-    let version = make_distance_version(repo.path());
-
-    assert_eq!(version.to_string(Some("rc")).unwrap(), "v1.2.3");
-}
-
-#[test]
-fn label_prefixes_any_development_strategy() {
-    let repo = create_temp_git_repo(false);
-    let version = Version {
-        version_type: VersionType::SemVer(default_semver("v", 1, 2, 3, 0)),
-        path: repo.path().join("bump.toml"),
-    };
+    let mut version = make_semver("v", 1, 2, 3, 0);
+    version.path = repo.path().join("bump.toml");
 
     let sha = git_rev_parse_short_in(repo.path());
     assert_eq!(
-        version.to_string(Some("dev")).unwrap(),
-        format!("v1.2.3+dev.{}", sha)
+        version.to_string(&PrintType::WithSuffix).unwrap(),
+        format!("v1.2.3+{}", sha)
     );
 }
 
 #[test]
-fn to_base_string_for_semver() {
-    let version = make_semver("v", 4, 5, 6, 0);
-    assert_eq!(version.to_base_string().unwrap(), "4.5.6");
-}
+fn to_string_with_suffix_fails_outside_git_repo() {
+    let _repo = create_temp_dir();
+    let version = make_semver("v", 1, 2, 3, 0);
 
-#[test]
-fn get_timestamp_returns_formatted_timestamp_for_semver() {
-    let semver = SemVer {
-        format: crate::version::SemVerFormat {
-            prefix: "v".to_string(),
-            delimiter: ".".to_string(),
-            timestamp: Some("%Y".to_string()),
-        },
-        version: crate::version::SemVerVersion {
-            major: 1,
-            minor: 0,
-            patch: 0,
-            candidate: 0,
-        },
-        candidate: crate::version::SemverCandidate {
-            promotion: "minor".to_string(),
-            delimiter: "-rc".to_string(),
-        },
-        development: crate::version::SemVerDevelopment {
-            promotion: "git_sha".to_string(),
-            delimiter: "+".to_string(),
-        },
-    };
-    let version = Version {
-        version_type: VersionType::SemVer(semver),
-        path: "unused.toml".into(),
-    };
-
-    let stamp = version.get_timestamp().unwrap();
-    assert_eq!(stamp.len(), 4);
-    assert!(stamp.chars().all(|c| c.is_ascii_digit()));
-}
-
-#[test]
-fn bump_semver_minor_resets_patch_and_candidate() {
-    let mut version = make_semver("v", 1, 2, 9, 3);
-
-    version.bump(&BumpType::Point(PointType::Minor)).unwrap();
-
-    match version.version_type {
-        VersionType::SemVer(semver) => {
-            assert_eq!(semver.version.major, 1);
-            assert_eq!(semver.version.minor, 3);
-            assert_eq!(semver.version.patch, 0);
-            assert_eq!(semver.version.candidate, 0);
-        }
-        _ => panic!("expected SemVer variant"),
-    }
-}
-
-#[test]
-fn bump_release_requires_existing_candidate() {
-    let mut version = make_semver("v", 1, 2, 3, 0);
-
-    let err = version.bump(&BumpType::Release).unwrap_err();
+    let err = version.to_string(&PrintType::WithSuffix).unwrap_err();
     match err {
-        BumpError::LogicError(msg) => assert!(msg.contains("Cannot release without a candidate")),
-        _ => panic!("expected LogicError"),
+        BumpError::Git(msg) => assert!(msg.contains("Not a git repository")),
+        _ => panic!("expected Git error"),
     }
 }
 
 #[test]
-fn bump_candidate_increments_or_starts_based_on_state() {
-    let mut fresh = make_semver("v", 1, 2, 3, 0);
-    fresh.bump(&BumpType::Candidate).unwrap();
-    match fresh.version_type {
-        VersionType::SemVer(semver) => {
-            assert_eq!(semver.version.minor, 3);
-            assert_eq!(semver.version.patch, 0);
-            assert_eq!(semver.version.candidate, 1);
-        }
-        _ => panic!("expected SemVer variant"),
-    }
+fn bump_minor_resets_patch_and_phase() {
+    let mut version = make_semver("v", 1, 2, 9, 7);
 
-    let mut existing = make_semver("v", 1, 2, 3, 4);
-    existing.bump(&BumpType::Candidate).unwrap();
-    match existing.version_type {
-        VersionType::SemVer(semver) => assert_eq!(semver.version.candidate, 5),
-        _ => panic!("expected SemVer variant"),
-    }
+    version.bump(&BumpType::Minor).unwrap();
+
+    assert_eq!(version.version.major, 1);
+    assert_eq!(version.version.minor, Some(3));
+    assert_eq!(version.version.patch, Some(0));
+    assert_eq!(version.phase.name, "");
+    assert_eq!(version.phase.distance, 0);
 }
 
 #[test]
-fn bump_candidate_uses_major_promotion_strategy() {
-    let mut version = make_semver("v", 1, 2, 3, 0);
-    if let VersionType::SemVer(semver) = &mut version.version_type {
-        semver.candidate.promotion = "major".to_string();
-    }
+fn bump_patch_increments_patch_and_clears_phase() {
+    let mut version = make_semver("v", 1, 2, 3, 2);
 
-    version.bump(&BumpType::Candidate).unwrap();
+    version.bump(&BumpType::Patch).unwrap();
 
-    match version.version_type {
-        VersionType::SemVer(semver) => {
-            assert_eq!(semver.version.major, 2);
-            assert_eq!(semver.version.minor, 0);
-            assert_eq!(semver.version.patch, 0);
-            assert_eq!(semver.version.candidate, 1);
-        }
-        _ => panic!("expected SemVer variant"),
-    }
+    assert_eq!(version.version.patch, Some(4));
+    assert_eq!(version.phase.name, "");
+    assert_eq!(version.phase.distance, 0);
 }
 
 #[test]
-fn bump_candidate_uses_patch_promotion_strategy() {
-    let mut version = make_semver("v", 1, 2, 3, 0);
-    if let VersionType::SemVer(semver) = &mut version.version_type {
-        semver.candidate.promotion = "patch".to_string();
-    }
+fn bump_phase_increment_mode_increments_distance() {
+    let mut version = make_semver("v", 1, 2, 3, 1);
 
-    version.bump(&BumpType::Candidate).unwrap();
+    version.bump(&BumpType::Phase("__increment__".to_string())).unwrap();
 
-    match version.version_type {
-        VersionType::SemVer(semver) => {
-            assert_eq!(semver.version.major, 1);
-            assert_eq!(semver.version.minor, 2);
-            assert_eq!(semver.version.patch, 4);
-            assert_eq!(semver.version.candidate, 1);
-        }
-        _ => panic!("expected SemVer variant"),
-    }
+    assert_eq!(version.phase.name, "rc");
+    assert_eq!(version.phase.distance, 2);
 }
 
 #[test]
-fn bump_candidate_invalid_promotion_defaults_to_minor() {
-    let mut version = make_semver("v", 1, 2, 7, 0);
-    if let VersionType::SemVer(semver) = &mut version.version_type {
-        semver.candidate.promotion = "bogus".to_string();
-    }
+fn bump_phase_new_name_switches_and_resets_distance() {
+    let mut version = make_semver("v", 1, 2, 3, 5);
 
-    version.bump(&BumpType::Candidate).unwrap();
+    version.bump(&BumpType::Phase("beta".to_string())).unwrap();
 
-    match version.version_type {
-        VersionType::SemVer(semver) => {
-            assert_eq!(semver.version.major, 1);
-            assert_eq!(semver.version.minor, 3);
-            assert_eq!(semver.version.patch, 0);
-            assert_eq!(semver.version.candidate, 1);
-        }
-        _ => panic!("expected SemVer variant"),
-    }
-}
-
-#[test]
-fn build_tag_name_semver_stable_and_candidate() {
-    let stable = make_semver("v", 2, 3, 4, 0);
-    assert_eq!(build_tag_name(&stable).unwrap(), "v2.3.4");
-
-    let candidate = make_semver("v", 2, 3, 4, 5);
-    assert_eq!(build_tag_name(&candidate).unwrap(), "v2.3.4-rc5");
+    assert_eq!(version.phase.name, "beta");
+    assert_eq!(version.phase.distance, 0);
 }
 
 #[test]
@@ -359,10 +211,8 @@ fn create_git_tag_fails_outside_git_repository() {
 #[test]
 fn create_git_tag_creates_tag_and_rejects_duplicate() {
     let repo = create_temp_git_repo(false);
-    let version = Version {
-        version_type: VersionType::SemVer(default_semver("v", 1, 4, 2, 0)),
-        path: repo.path().join("bump.toml"),
-    };
+    let mut version = make_semver("v", 1, 4, 2, 0);
+    version.path = repo.path().join("bump.toml");
 
     with_cwd(repo.path(), || {
         create_git_tag(&version, Some("test tag")).unwrap();

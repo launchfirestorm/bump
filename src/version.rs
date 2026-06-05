@@ -56,9 +56,9 @@ pub struct Version {
 }
 
 impl Version {
-    pub fn default(path: &PathBuf) -> Self {
+    pub fn default(path: &Path) -> Self {
         Version {
-            path: path.clone(),
+            path: path.to_path_buf(),
             timestamp: TimestampTable {
                 format: "%Y-%m-%d %H:%M:%S".to_string(),
                 last: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -118,7 +118,7 @@ distance = 0
 type = "git_sha"
 delimiter = "+"
         "#, current_timestamp);
-        Ok(fs::write(&self.path, content).map_err(BumpError::IoError)?)
+        fs::write(&self.path, content).map_err(BumpError::IoError)
     }
 
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
@@ -185,7 +185,7 @@ delimiter = "+"
         if !self.path.exists() {
             return Err(BumpError::IoError(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("{}", self.path.display()),
+                self.path.display().to_string(),
             )));
         }
         let original_content = fs::read_to_string(&self.path).map_err(BumpError::IoError)?;
@@ -201,13 +201,13 @@ delimiter = "+"
         doc["version"]["prefix"] = value(&self.version.prefix);
         doc["version"]["delimiter"] = value(&self.version.delimiter);
         doc["version"]["major"] = value(self.version.major as i64);
-        if self.version.minor.is_some() {
-            doc["version"]["minor"] = value(self.version.minor.unwrap() as i64);
+        if let Some(minor) = self.version.minor {
+            doc["version"]["minor"] = value(minor as i64);
         } else {
             doc["version"].as_table_mut().unwrap().remove("minor");
         }
-        if self.version.patch.is_some() {
-            doc["version"]["patch"] = value(self.version.patch.unwrap() as i64);
+        if let Some(patch) = self.version.patch {
+            doc["version"]["patch"] = value(patch as i64);
         } else {
             doc["version"].as_table_mut().unwrap().remove("patch");
         }
@@ -219,10 +219,7 @@ delimiter = "+"
         doc["suffix"]["type"] = value(&self.suffix._type);
         doc["suffix"]["delimiter"] = value(&self.suffix.delimiter);
 
-        match fs::write(self.path.as_path(), doc.to_string()) {
-            Ok(_) => Ok(()),
-            Err(err) => Err(BumpError::IoError(err)),
-        }
+        fs::write(self.path.as_path(), doc.to_string()).map_err(BumpError::IoError)
     }
 
     pub fn to_string(&self, print_type: &PrintType) -> Result<String, BumpError> {
@@ -254,42 +251,37 @@ delimiter = "+"
                 self.get_suffix()?
             )),
             PrintType::WithTimestamp => Ok(format!(
-                "{}{}{}{}",
+                "{}{}{}  {}",
                 self.version.prefix,
                 self.get_base(),
                 self.get_phase(),
-                format!("  {}", self.timestamp.last)
+                self.timestamp.last
             )),
             PrintType::Full => Ok(format!(
-                "{}{}{}{}{}",
+                "{}{}{}{}  {}",
                 self.version.prefix,
                 self.get_base(),
                 self.get_phase(),
                 self.get_suffix()?,
-                format!("  {}", self.timestamp.last)
+                self.timestamp.last
             )),
         }
     }
 
     fn get_base(&self) -> String {
-        if self.version.minor.is_some() && self.version.patch.is_some() {
-            format!(
+        match (self.version.minor, self.version.patch) {
+            (Some(minor), Some(patch)) => format!(
                 "{}{}{}{}{}",
-                &self.version.major,
-                &self.version.delimiter,
-                &self.version.minor.unwrap(),
-                &self.version.delimiter,
-                &self.version.patch.unwrap()
-            )
-        } else if self.version.minor.is_some() {
-            format!(
-                "{}{}{}", 
-                &self.version.major, 
-                &self.version.delimiter, 
-                &self.version.minor.unwrap()
-            )
-        } else {
-            format!("{}", &self.version.major)
+                self.version.major,
+                self.version.delimiter,
+                minor,
+                self.version.delimiter,
+                patch
+            ),
+            (Some(minor), None) => {
+                format!("{}{}{}", self.version.major, self.version.delimiter, minor)
+            }
+            _ => self.version.major.to_string(),
         }
     }
 
@@ -307,7 +299,7 @@ delimiter = "+"
                         self.phase.distance,
                     )
                 } else {
-                    format!("{}", self.phase.name)
+                    self.phase.name.to_string()
                 }
 
             },
@@ -398,9 +390,7 @@ delimiter = "+"
             }
             BumpType::Phase(cli_phase_name) => {
                 let current_phase = &self.phase.name;
-                if *cli_phase_name == "__increment__" {
-                    self.phase.distance += 1;
-                } else if current_phase == cli_phase_name {
+                if *cli_phase_name == "__increment__" || current_phase == cli_phase_name {
                     self.phase.distance += 1;
                 } else {
                     // different phase, switch to it and reset distance
@@ -415,17 +405,17 @@ delimiter = "+"
                     ));
                 }
                 if now.year() as u32 == self.version.major &&
-                   now.month() as u32 == self.version.minor.unwrap_or(0) &&
-                   now.day() as u32 == self.version.patch.unwrap_or(0) {
+                   now.month() == self.version.minor.unwrap_or(0) &&
+                   now.day() == self.version.patch.unwrap_or(0) {
                     // If the date hasn't changed, just increment the phase distance (if any)
                     self.phase.distance += 1;
                 }
                 self.version.major = now.year() as u32;
                 if self.version.minor.is_some() {
-                    self.version.minor = Some(now.month() as u32);
+                    self.version.minor = Some(now.month());
                 }
                 if self.version.patch.is_some() {
-                    self.version.patch = Some(now.day() as u32);
+                    self.version.patch = Some(now.day());
                 }
             }
         }
