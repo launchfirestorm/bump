@@ -22,9 +22,16 @@ pub struct VersionTable {
     pub mode: String,
     pub prefix: String,
     pub delimiter: String,
+
+    // semver and calver share the same fields but with different meanings
+    #[serde(alias = "year")]
     pub major: u32,
+
+    #[serde(alias = "month")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub minor: Option<u32>,
+
+    #[serde(alias = "day")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub patch: Option<u32>,
 }
@@ -97,13 +104,17 @@ impl Version {
 format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
 last = "{}"
 
+# NOTE: some fields are modified by bump
+#   - minor is optional and can be removed if not needed
+#   - patch is optional and can be removed if not needed
+# or "calver"
 [version]
-mode = "semver"  # or "calver"
+mode = "semver"
 prefix = "v"
 delimiter = "."
 major = 0  
-minor = 1  # [optional] field can be removed if not needed
-patch = 0  # [optional] can be removed if not needed
+minor = 1
+patch = 0
 
 [phase]  
 prefix = "-"
@@ -121,6 +132,32 @@ delimiter = "+"
         fs::write(&self.path, content).map_err(BumpError::IoError)
     }
 
+
+    fn warn_mode_key_mismatch(path: &Path, content: &str) {
+        let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
+            return;
+        };
+
+        let Some(version) = doc["version"].as_table() else {
+            return;
+        };
+
+        let mode = version.get("mode").and_then(|v| v.as_str()).unwrap_or("semver");
+
+        if mode == "semver" {
+            let has_calver_keys =
+                version.contains_key("year") || version.contains_key("month") || version.contains_key("day");
+
+            if has_calver_keys {
+                println!(
+                    "bump warning: [version].mode is semver, but found calver keys (year/month/day) in {}. \
+                    \nThey will be treated as major/minor/patch and rewritten on save.",
+                    path.display()
+                );
+            }
+        }
+    }
+
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
         let content = fs::read_to_string(path).map_err(|err| {
             if err.kind() == io::ErrorKind::NotFound {
@@ -132,6 +169,8 @@ delimiter = "+"
                 BumpError::IoError(err)
             }
         })?;
+
+        Self::warn_mode_key_mismatch(path, &content);
 
         let version_parsed: Version = match toml::from_str(&content) {
             Ok(v) => {
@@ -179,6 +218,35 @@ delimiter = "+"
         Ok(version_parsed)
     }
 
+    fn version_remap(&self, doc: &mut DocumentMut) {
+        let Some(version_table) = doc["version"].as_table_mut() else {
+            return;
+        };
+
+        let (major_key, minor_key, patch_key, old_major, old_minor, old_patch) =
+            if self.version.mode == "calver" {
+                ("year", "month", "day", "major", "minor", "patch")
+            } else {
+                ("major", "minor", "patch", "year", "month", "day")
+            };
+
+        version_table[major_key] = value(self.version.major as i64);
+        version_table.remove(old_major);
+
+        if let Some(minor) = self.version.minor {
+            version_table[minor_key] = value(minor as i64);
+        } else {
+            version_table.remove(minor_key);
+        }
+        version_table.remove(old_minor);
+
+        if let Some(patch) = self.version.patch {
+            version_table[patch_key] = value(patch as i64);
+        } else {
+            version_table.remove(patch_key);
+        }
+        version_table.remove(old_patch);
+    }
 
     pub fn to_file(&self) -> Result<(), BumpError> {
         // Try to read existing file to preserve comments and formatting
@@ -200,17 +268,7 @@ delimiter = "+"
         doc["version"]["mode"] = value(&self.version.mode);
         doc["version"]["prefix"] = value(&self.version.prefix);
         doc["version"]["delimiter"] = value(&self.version.delimiter);
-        doc["version"]["major"] = value(self.version.major as i64);
-        if let Some(minor) = self.version.minor {
-            doc["version"]["minor"] = value(minor as i64);
-        } else {
-            doc["version"].as_table_mut().unwrap().remove("minor");
-        }
-        if let Some(patch) = self.version.patch {
-            doc["version"]["patch"] = value(patch as i64);
-        } else {
-            doc["version"].as_table_mut().unwrap().remove("patch");
-        }
+        self.version_remap(&mut doc);
 
         doc["phase"]["prefix"] = value(&self.phase.prefix);
         doc["phase"]["name"] = value(&self.phase.name);
@@ -275,13 +333,22 @@ delimiter = "+"
                 "{}{}{}{}{}",
                 self.version.major,
                 self.version.delimiter,
-                minor,
+                if self.version.mode == "calver" { format!("{:02}", minor) } else { minor.to_string() },
                 self.version.delimiter,
-                patch
+                if self.version.mode == "calver" { format!("{:02}", patch) } else { patch.to_string() },
             ),
-            (Some(minor), None) => {
-                format!("{}{}{}", self.version.major, self.version.delimiter, minor)
-            }
+            (Some(minor), None) => format!(
+                "{}{}{}", 
+                self.version.major, 
+                self.version.delimiter, 
+                if self.version.mode == "calver" { format!("{:02}", minor) } else { minor.to_string() },
+            ),
+            (None, Some(patch)) => format!(
+                "{}{}{}", 
+                self.version.major, 
+                self.version.delimiter, 
+                if self.version.mode == "calver" { format!("{:02}", patch) } else { patch.to_string() },
+            ),
             _ => self.version.major.to_string(),
         }
     }
@@ -363,11 +430,15 @@ delimiter = "+"
             }
             BumpType::Phase(cli_phase_name) => {
                 // BOTH modes have phases
-                if *cli_phase_name != "__increment__" {
-                    // different phase, switch to it and reset distance
+                if cli_phase_name == &self.phase.name {
+                    // same phase, just increment distance 
+                    self.phase.distance += 1;
+                } else if *cli_phase_name != "__increment__" {
+                    // different phase, switch to it and set distance to 1
                     self.phase.name = cli_phase_name.clone();
                     self.phase.distance = 1;
                 } else {
+                    // no arg just increment distance
                     self.phase.distance += 1;
                 }
             }

@@ -116,6 +116,49 @@ fn create_file_writes_template() {
 }
 
 #[test]
+fn to_file_semver_remaps_year_month_day_keys() {
+    let temp_dir = TempDir::new().unwrap();
+    let bump_path = temp_dir.path().join("bump.toml");
+    let content = r#"[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "2026-01-01 00:00:00 UTC"
+
+[version]
+mode = "semver"
+prefix = "v"
+delimiter = "."
+year = 2026
+month = 6
+day = 5
+
+[phase]
+prefix = "-"
+name = ""
+delimiter = "-"
+distance = 0
+
+[suffix]
+mode = "git_sha"
+delimiter = "+"
+"#;
+    write_bump_toml(&bump_path, content);
+
+    let version = Version::from_file(&bump_path).unwrap();
+    version.to_file().unwrap();
+
+    let rewritten = std::fs::read_to_string(&bump_path).unwrap();
+    let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
+    let table = parsed.get("version").unwrap().as_table().unwrap();
+
+    assert_eq!(table.get("major").and_then(|v| v.as_integer()), Some(2026));
+    assert_eq!(table.get("minor").and_then(|v| v.as_integer()), Some(6));
+    assert_eq!(table.get("patch").and_then(|v| v.as_integer()), Some(5));
+    assert!(!table.contains_key("year"));
+    assert!(!table.contains_key("month"));
+    assert!(!table.contains_key("day"));
+}
+
+#[test]
 fn to_string_regular_uses_prefix_base_and_phase() {
     let mut version = make_semver("v", 1, 2, 3, 2);
     version.phase.prefix = "-".to_string();

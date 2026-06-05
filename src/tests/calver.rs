@@ -60,3 +60,46 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
 
     assert_eq!(version.phase.distance, 5);
 }
+
+#[test]
+fn to_file_calver_remaps_major_minor_patch_keys() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let bump_path = temp_dir.path().join("bump.toml");
+    let content = r#"[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "2026-01-01 00:00:00 UTC"
+
+[version]
+mode = "calver"
+prefix = ""
+delimiter = "."
+major = 2026
+minor = 6
+patch = 5
+
+[phase]
+prefix = "-"
+name = ""
+delimiter = "-"
+distance = 0
+
+[suffix]
+mode = "git_sha"
+delimiter = "+"
+"#;
+    write_bump_toml(&bump_path, content);
+
+    let version = Version::from_file(&bump_path).unwrap();
+    version.to_file().unwrap();
+
+    let rewritten = std::fs::read_to_string(&bump_path).unwrap();
+    let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
+    let table = parsed.get("version").unwrap().as_table().unwrap();
+
+    assert_eq!(table.get("year").and_then(|v| v.as_integer()), Some(2026));
+    assert_eq!(table.get("month").and_then(|v| v.as_integer()), Some(6));
+    assert_eq!(table.get("day").and_then(|v| v.as_integer()), Some(5));
+    assert!(!table.contains_key("major"));
+    assert!(!table.contains_key("minor"));
+    assert!(!table.contains_key("patch"));
+}
