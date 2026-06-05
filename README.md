@@ -41,14 +41,12 @@ irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump
 ### Initialize a Project
 
 ```bash
-# Initialize with SemVer (default)
 bump init
-
-# Or initialize with CalVer
-bump init --calver
 ```
 
 This creates a **"BUMPFILE"** defaulted to `bump.toml` in your current directory with sensible defaults. You can rename this to how you want.
+
+To use CalVer, set `mode = "calver"` under `[version]` in your bumpfile.
 
 ## Commands
 
@@ -58,23 +56,29 @@ This creates a **"BUMPFILE"** defaulted to `bump.toml` in your current directory
 > All print variants write output **without a trailing newline**.
 
 ```bash
-# Print current version
-bump --print [BUMPFILE]                    # Root version (prefix + candidate suffix if present)
-bump --print-base [BUMPFILE]               # Base semver only: MAJOR.MINOR.PATCH (SemVer only)
-bump --print-full [BUMPFILE]               # Full version with development suffix policy (git_sha/branch/full/distance)
-bump --print-full --label dev [BUMPFILE]   # Prefix the dev suffix with a phase label (e.g. dev/rc)
-bump --print-with-timestamp [BUMPFILE]     # Full version + configured build timestamp (SemVer only)
+# Default print ([prefix][base][phase])
+bump print [BUMPFILE]
+
+# Print variants
+bump print --only-prefix [BUMPFILE]
+bump print --only-phase [BUMPFILE]
+bump print --only-base [BUMPFILE]
+bump print --no-prefix [BUMPFILE]
+bump print --no-phase [BUMPFILE]
+bump print --with-suffix [BUMPFILE]
+bump print --with-timestamp [BUMPFILE]
+bump print --full [BUMPFILE]
 ```
 
 ### PRO TIP: you can inject bump _everywhere_
 ```bash
-sed -i "s|REPLACE_ME|$(bump --print)|g" somefile
+sed -i "s|REPLACE_ME|$(bump print)|g" somefile
 ```
 
 ```cmake
 # CMakeLists.txt
 execute_process(
-  COMMAND bump --print-base
+  COMMAND bump print --only-base
   WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/
   OUTPUT_VARIABLE VERSION)
 project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
@@ -83,29 +87,51 @@ project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
 
 ### SemVer Commands
 
+> in combining semver and calver ideas both learned from each other.
+>  
+
 ```bash
 # Bump version numbers (updates BUMPFILE)
 bump --major     # 1.0.0 -> 2.0.0
 bump --minor     # 1.0.0 -> 1.1.0  
 bump --patch     # 1.0.0 -> 1.0.1
-bump --candidate # 1.0.0 -> 1.1.0-rc1 (or increment rc if already candidate)
-bump --release   # 1.1.0-rc1 -> 1.1.0 (promote candidate to release)
 
-bump --prefix "release-" --major [BUMPFILE]  # Uses "release-" instead of configured prefix
+# phase workflow
+bump --phase alpha  # 1.1.0 -> 1.1.0-alpha.1
+bump --phase        # increment phase distance, e.g. 1.1.0-alpha.2
 ```
 
 ### CalVer Commands
 
 ```bash
-# CalVer versions are automatically generated from the current date
+# Set [version].mode = "calver" in BUMPFILE, then:
 bump --calendar [BUMPFILE]  # Updates to current date (e.g., 2026.02.25)
-
-# Same-day bumps automatically increment revision:
-# First:  2026.02.25    (revision = 0, not shown)
-# Second: 2026.02.25-1  (revision = 1)
-# Third:  2026.02.25-2  (revision = 2)
-# Next day, revision resets to 0
+# Same-day bumps automatically increment phase distance
 ```
+
+## Recommended Workflow (v7)
+
+```bash
+# 1) bump version state in bump.toml
+bump --minor
+
+# 2) update project metadata files (optional)
+bump update Cargo.toml
+
+# 3) inspect version output for build/release jobs
+bump print --full
+
+# 4) commit and tag
+git add bump.toml Cargo.toml
+git commit -m "chore(release): update version to $(bump print)"
+bump tag
+git push origin HEAD --tags
+```
+
+### Mode/key compatibility behavior
+
+- If `mode = "semver"` and keys like `year/month/day` are found, bump prints a warning and rewrites keys as `major/minor/patch` on save.
+- If `mode = "calver"` and keys like `major/minor/patch` are found, bump rewrites keys as `year/month/day` on save.
 
 ### Code Generation
 
@@ -132,11 +158,10 @@ bump gen --lang c --output version.h custom.toml
 ### Git Integration
 
 ```bash
-# Create a git tag for the current version, message is conventional commit format
+# Create a git tag for the current version, message is conventional commit format that adds the version
 bump tag [BUMPFILE]
 
 # Create a tag with custom message
-bump tag --message "Release v1.2.3 - Critical security fix" [BUMPFILE]
 bump tag -m "Custom message" [BUMPFILE]
 ```
 
@@ -161,13 +186,13 @@ bump update pyproject.toml [BUMPFILE]
 composite action `action.yml` at repo root installs bump for the job’s OS/arch:
 
 ```yaml
-- uses: launchfirestorm/bump@v6
+- uses: launchfirestorm/bump@v7
 ```
 
 if your token differs from the default `GITHUB_TOKEN`
 
 ```yaml
-- uses: launchfirestorm/bump@v6
+- uses: launchfirestorm/bump@v7
   with:
     token: ${{ secrets.YOUR_TOKEN_HERE }}
 ```

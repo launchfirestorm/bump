@@ -4,7 +4,7 @@ Thank you for your interest in contributing to bump! This document provides info
 
 ## Build from Source
 
-This project uses the musl toolchain to produce statically linked binaries that are highly portable across Linux distributions.
+This project builds normally for development and release, and can optionally be cross-compiled with musl for static Linux binaries.
 
 ### Prerequisites
 
@@ -16,7 +16,7 @@ rustup target add x86_64-unknown-linux-musl
 
 ### Building
 
-The project is configured to automatically build with musl:
+Default release build:
 
 ```bash
 # Clone the repository
@@ -27,10 +27,15 @@ cd bump
 cargo build --release
 
 # The binary will be available at
-# target/x86_64-unknown-linux-musl/release/bump
+# target/release/bump
 ```
 
-The resulting binary is statically linked and can run on virtually any Linux distribution without additional dependencies.
+Optional static Linux build with musl:
+
+```bash
+cargo build --release --target x86_64-unknown-linux-musl
+# target/x86_64-unknown-linux-musl/release/bump
+```
 
 ### Development Build
 
@@ -64,8 +69,7 @@ bump/
 │       ├── semver.rs
 │       └── calver.rs
 ├── docs/             # Documentation
-├── Cargo.toml        # Rust project configuration
-└── bumpfile          # Bump's own version file
+└── Cargo.toml        # Rust project configuration
 ```
 
 ## Making Changes
