@@ -10,24 +10,10 @@ pub fn cli() -> Command {
                 .value_parser(clap::value_parser!(String))
                 .default_value("bump.toml")
                 .global(true)
-                .help("Path to the configuration file (default: bump.toml)")
+                .help("Path to the configuration file")
         )
         .subcommand(
-            Command::new("init")
-                .about("Initialize a new version file with default values")
-                .arg(
-                    Arg::new("prefix")
-                        .long("prefix")
-                        .value_name("PREFIX")
-                        .value_parser(clap::value_parser!(String))
-                        .help("Prefix for version tags (defaults: 'v' for SemVer, '' for CalVer)")
-                )
-                .arg(
-                    Arg::new("calver")
-                        .long("calver")
-                        .action(clap::ArgAction::SetTrue)
-                        .help("Initialize with Calendar Versioning instead of Semantic Versioning")
-                )
+            Command::new("init").about("Initialize a new version file with default values")
         )
         .subcommand(
             Command::new("gen")
@@ -78,35 +64,65 @@ pub fn cli() -> Command {
                 )
 
         )
-        .arg(
-            Arg::new("print")
-                .short('p')
-                .long("print")
-                .action(clap::ArgAction::SetTrue)
-                .group("print-group")
-                .help("Print version without newline, with prefix and with candidate suffix (if in candidacy)"),
-        )
-        .arg(
-            Arg::new("print-base")
-                .short('b')
-                .long("print-base")
-                .action(clap::ArgAction::SetTrue)
-                .group("print-group")
-                .help("Print base version without newline, no prefix and no candidate suffix"),
-        )
-        .arg(
-            Arg::new("print-full")
-                .long("print-full")
-                .action(clap::ArgAction::SetTrue)
-                .group("print-group")
-                .help("Print full version without newline, with prefix and with development promotion"),
-        )
-        .arg(
-            Arg::new("print-with-timestamp")
-                .long("print-with-timestamp")
-                .action(clap::ArgAction::SetTrue)
-                .group("print-group")
-                .help("Print full version without newline, with timestamp (SemVer only)"),
+        .subcommand(Command::new("print")
+            .about("Print [prefix][base][phase] from BUMPFILE without newline")
+            .alias("p")
+            .arg(
+                Arg::new("only-prefix")
+                    .long("only-prefix")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-exclusive")
+                    .help("Print [prefix]"),
+            )
+            .arg(
+                Arg::new("only-phase")
+                    .long("only-phase")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-exclusive")
+                    .help("Print [phase]"),
+            )
+            .arg(
+                Arg::new("only-base")
+                    .long("only-base")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-exclusive")
+                    .help("Print [base]"),
+            )
+            .arg(
+                Arg::new("no-prefix")
+                    .long("no-prefix")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-stackable")
+                    .help("Print [base][phase]"),
+            )
+            .arg(
+                Arg::new("no-phase")
+                    .long("no-phase")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-stackable")
+                    .help("Print [prefix][base]"),
+            )
+            .arg(
+                Arg::new("with-suffix")
+                    .long("with-suffix")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-stackable")
+                    .help("Print [prefix][base][phase][suffix]"),
+            )
+            .arg(
+                Arg::new("with-timestamp")
+                    .long("with-timestamp")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-stackable")
+                    .help("Print [prefix][base][phase][timestamp]"),
+            )
+            .arg(
+                Arg::new("full")
+                    .long("full")
+                    .action(clap::ArgAction::SetTrue)
+                    .group("print-stackable")
+                    .help("Print [prefix][base][phase][suffix][timestamp]"),
+            )
         )
         .arg(
             Arg::new("prefix")
@@ -118,51 +134,56 @@ pub fn cli() -> Command {
                 .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
         )
         .arg(
+            Arg::new("suffix")
+                .long("suffix")
+                .value_name("SUFFIX")
+                .value_parser(clap::value_parser!(String))
+                .num_args(1)
+                .group("meta")
+                .help("Suffix for version tags (e.g., '-beta', '-SNAPSHOT', or empty string)")
+        )
+        .arg(
             Arg::new("major")
                 .long("major")
                 .action(clap::ArgAction::SetTrue)
-                .group("point-release")
-                .conflicts_with_all(["meta", "candidate-release", "print-group"])
+                .group("formal")
+                .conflicts_with_all(["meta"])
                 .help("Bump the major version"),
         )
         .arg(
             Arg::new("minor")
                 .long("minor")
                 .action(clap::ArgAction::SetTrue)
-                .group("point-release")
-                .conflicts_with_all(["meta", "candidate-release", "print-group"])
+                .group("formal")
+                .conflicts_with_all(["meta"])
                 .help("Bump the minor version"),
         )
         .arg(
             Arg::new("patch")
                 .long("patch")
                 .action(clap::ArgAction::SetTrue)
-                .group("point-release")
-                .conflicts_with_all(["meta", "candidate-release", "print-group"])
+                .group("formal")
+                .conflicts_with_all(["meta"])
                 .help("Bump the patch version"),
         )
         .arg(
-            Arg::new("release")
-                .long("release")
-                .action(clap::ArgAction::SetTrue)
-                .group("point-release")
-                .conflicts_with_all(["meta", "candidate-release", "print-group"])
-                .help("Drop candidacy and promote to release")
-        )
-        .arg(
-            Arg::new("candidate")
-                .long("candidate")
-                .action(clap::ArgAction::SetTrue)
-                .help("if in candidacy increments the candidate version, otherwise creates a new candidate")
-                .group("candidate-release")
-                .conflicts_with_all(["point-release", "print-group"])
+            Arg::new("phase")
+                .long("phase")
+                .value_name("PHASE")
+                .value_parser(clap::value_parser!(String))
+                .num_args(0..=1)
+                .default_missing_value("__increment__") // hidden from help
+                .allow_hyphen_values(true)
+                .group("formal")
+                .conflicts_with_all(["meta"])
+                .help("If specified, sets the phase and resets distance. If used without a value, increments the distance."),
         )
         .arg(
             Arg::new("calendar")
                 .long("calendar")
                 .action(clap::ArgAction::SetTrue)
-                .help("Update to current date (CalVer only)")
-                .group("calendar-release")
-                .conflicts_with_all(["point-release", "candidate-release", "meta", "print-group"])
+                .help("update version based on current calendar date")
+                .group("formal")
+                .conflicts_with_all(["meta"])
         )
 }

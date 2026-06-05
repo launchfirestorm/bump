@@ -1,6 +1,6 @@
 [package]
 name = "bump"
-version = "6.0.5"
+version = "7.0.0"
 edition = "2024"
 authors = ["Tony B"]
 description = "Un-opinionated automatic versioning"

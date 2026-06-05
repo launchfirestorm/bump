@@ -1,5 +1,5 @@
 use crate::lang::{self, Language};
-use crate::version::{Version, VersionType, default_calver, default_semver};
+use crate::version::{Version};
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
@@ -22,18 +22,12 @@ pub fn set_test_repo_path(path: Option<PathBuf>) {
     TEST_REPO_PATH.with(|p| *p.borrow_mut() = path);
 }
 
-pub enum PointType {
+pub enum BumpType {
     Major,
     Minor,
     Patch,
-}
-
-pub enum BumpType {
-    Prefix(String),
-    Point(PointType),
-    Candidate, // candidate will bump the minor version and append a rc1
-    Release,   // release will drop candidacy and not increment (hence released)
-    Calendar,  // calendar will update to current date (CalVer only)
+    Phase(String),      // increment phase distance
+    Calendar,
 }
 
 #[derive(Debug)]
@@ -46,10 +40,15 @@ pub enum BumpError {
 }
 
 pub enum PrintType {
-    Root,
-    Base,
-    Full,
-    Timestamp,
+    OnlyPrefix,
+    OnlyPhase,
+    OnlyBase,
+    Regular,
+    NoPrefix,
+    NoPhase,
+    WithSuffix,
+    WithTimestamp,
+    Full, // includes prefix, phase, suffix, and timestamp
 }
 
 impl fmt::Display for BumpError {
@@ -114,20 +113,14 @@ pub fn get_version(matches: &ArgMatches) -> Result<Version, BumpError> {
 }
 
 pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
-    if matches.get_one::<String>("prefix").is_some() {
-        Ok(BumpType::Prefix(
-            matches.get_one::<String>("prefix").unwrap().to_string(),
-        ))
-    } else if matches.get_flag("major") {
-        Ok(BumpType::Point(PointType::Major))
+    if matches.get_flag("major") {
+        Ok(BumpType::Major)
     } else if matches.get_flag("minor") {
-        Ok(BumpType::Point(PointType::Minor))
+        Ok(BumpType::Minor)
     } else if matches.get_flag("patch") {
-        Ok(BumpType::Point(PointType::Patch))
-    } else if matches.get_flag("candidate") {
-        Ok(BumpType::Candidate)
-    } else if matches.get_flag("release") {
-        Ok(BumpType::Release)
+        Ok(BumpType::Patch)
+    } else if let Some(phase_value) = matches.get_one::<String>("phase") {
+        Ok(BumpType::Phase(phase_value.to_string()))
     } else if matches.get_flag("calendar") {
         Ok(BumpType::Calendar)
     } else {
@@ -137,125 +130,52 @@ pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
     }
 }
 
-pub fn initialize(bumpfile: &str, prefix: &str, use_calver: bool) -> Result<(), BumpError> {
+pub fn get_print_type(matches: &ArgMatches) -> PrintType {
+    if matches.get_flag("only-prefix") {
+        PrintType::OnlyPrefix
+    } else if matches.get_flag("only-phase") {
+        PrintType::OnlyPhase
+    } else if matches.get_flag("only-base") {
+        PrintType::OnlyBase
+    } else if matches.get_flag("no-prefix") {
+        PrintType::NoPrefix
+    } else if matches.get_flag("no-phase") {
+        PrintType::NoPhase
+    } else if matches.get_flag("with-suffix") {
+        PrintType::WithSuffix
+    } else if matches.get_flag("with-timestamp") {
+        PrintType::WithTimestamp
+    } else if matches.get_flag("full") {
+        PrintType::Full
+    } else {
+        PrintType::Regular
+    }
+}
+
+pub fn initialize(matches: &ArgMatches) -> Result<(), BumpError> {
+    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
     let filepath = resolve_path(bumpfile);
     ensure_directory_exists(&filepath)?;
-
-    if use_calver {
-        let version = Version {
-            version_type: VersionType::CalVer(
-                default_calver(prefix)
-            ),
-            path: filepath.clone(),
-        };
-        version.file_init()?;
-        println!("Initialized new CalVer version file at '{}'", filepath.display());
-    } else {
-        let version = Version {
-            version_type: VersionType::SemVer(
-                default_semver("v", 0, 1, 0, 0)
-            ),
-            path: filepath.clone(),
-        };
-        version.file_init()?;
-        println!("Initialized new SemVer version file at '{}'", filepath.display());
-    }
-
+    let version = Version::default(&filepath);
+    version.create_file()?;
+    println!("Initialized new BUMPFILE at '{}'", filepath.display());
     Ok(())
 }
 
-pub fn print(version: &Version, print_type: &PrintType) -> Result<(), BumpError> {
-    match print_type {
-        PrintType::Root => {
-            let version_str = version.to_root_string(true)?;
-            print!("{}", version_str);
-        }
-        PrintType::Base => {
-            let base_str= version.to_base_string()?;
-            print!("{}", base_str);
-        }
-        PrintType::Full => {
-            let version_str = version.to_string()?;
-            print!("{}", version_str);
-        }
-        PrintType::Timestamp => {
-            let timestamp= version.get_timestamp()?;
-            let version_str = version.to_string()?;
-            print!("{} {}", version_str, timestamp);
-        }
-    }
+pub fn print(matches: &ArgMatches) -> Result<(), BumpError> {
+    let print_type = get_print_type(matches);
+    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
+    let version = Version::from_file(&resolve_path(bumpfile))?;
+    print!("{}", version.to_string(&print_type)?);
     Ok(())
 }
 
 pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let mut version = get_version(matches)?;
     let bump_type = get_bump_type(matches)?;
-    
-    // Validate that bump type is compatible with version type
-    match (&version.version_type, &bump_type) {
-        (VersionType::CalVer { .. }, BumpType::Point(_)) => {
-            return Err(BumpError::LogicError(
-                "CalVer does not support major/minor/patch bumps. Use 'bump --calendar' to update to current date.".to_string()
-            ));
-        }
-        (VersionType::CalVer { .. }, BumpType::Candidate) => {
-            return Err(BumpError::LogicError(
-                "CalVer does not support candidate versions. Use conflict resolution in bump.toml instead.".to_string()
-            ));
-        }
-        (VersionType::CalVer { .. }, BumpType::Release) => {
-            return Err(BumpError::LogicError(
-                "CalVer does not support release bumps.".to_string()
-            ));
-        }
-        (VersionType::CalVer { .. }, BumpType::Prefix(_)) => {
-            return Err(BumpError::LogicError(
-                "CalVer does not support prefix changes after initialization.".to_string()
-            ));
-        }
-        (VersionType::SemVer { .. }, BumpType::Calendar) => {
-            return Err(BumpError::LogicError(
-                "SemVer does not support --calendar bump. Use --major, --minor, --patch, --candidate, or --release.".to_string()
-            ));
-        }
-        _ => {} // Valid combination
-    }
-    
     version.bump(&bump_type)?;
-
-    match version.to_file() {
-        Ok(()) => match bump_type {
-            BumpType::Prefix(new_prefix) => println!(
-                "Updated prefix of '{}' to '{}'",
-                version.path.display(),
-                new_prefix
-            ),
-            BumpType::Point(_) => println!(
-                "Bumped '{}' to point release {}",
-                version.path.display(),
-                version.to_root_string(true)?
-            ),
-            BumpType::Candidate => println!(
-                "Bumped '{}' to new candidate {}",
-                version.path.display(),
-                version.to_root_string(true)?
-            ),
-            BumpType::Release => println!(
-                "Bumped '{}' drop candidacy to release! {}",
-                version.path.display(),
-                version.to_root_string(true)?
-            ),
-            BumpType::Calendar => println!(
-                "Bumped '{}' to calendar version {}",
-                version.path.display(),
-                version.to_root_string(true)?
-            ),
-        },
-        Err(err) => {
-            return Err(err);
-        }
-    }
-
+    version.to_file()?;
+    println!("bumped {} to {}", version.path.display(), version.to_string(&PrintType::WithTimestamp)?);
     Ok(())
 }
 
@@ -308,13 +228,13 @@ pub fn is_git_repository() -> bool {
         .unwrap_or(false)
 }
 
-pub fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
-    if last_tag {
-        run_git("describe --tags --abbrev=0")
-    } else {
-        run_git("describe --exact-match --tags HEAD")
-    }
-}
+// pub fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
+//     if last_tag {
+//         run_git("describe --tags --abbrev=0")
+//     } else {
+//         run_git("describe --exact-match --tags HEAD")
+//     }
+// }
 
 pub fn get_git_commit_sha() -> Result<String, BumpError> {
     run_git("rev-parse --short HEAD")
@@ -324,21 +244,9 @@ pub fn get_git_branch() -> Result<String, BumpError> {
     run_git("rev-parse --abbrev-ref HEAD")
 }
 
-pub fn get_development_suffix(promotion_strategy: &str) -> Result<String, BumpError> {
-    match promotion_strategy {
-        "git_sha" => get_git_commit_sha(),
-        "branch" => get_git_branch(),
-        "full" => {
-            let branch = get_git_branch()?;
-            let sha = get_git_commit_sha()?;
-            Ok(format!("{}_{}", branch, sha))
-        }
-        _ => get_git_commit_sha(), // default to git_sha
-    }
-}
-
 pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> {
-    let version = Version::from_argmatches(matches)?;
+    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
+    let version = Version::from_file(&resolve_path(bumpfile))?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
     for output_file in output_files {
         let output_path = Path::new(output_file);
@@ -351,35 +259,6 @@ pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> 
     }
 
     Ok(())
-}
-
-pub fn build_tag_name(version: &Version) -> Result<String, BumpError> {
-    let tag_name = match &version.version_type {
-        VersionType::SemVer ( semver ) => {
-            if semver.version.candidate > 0 {
-                format!(
-                    "{}{}.{}.{}{}{}",
-                    semver.format.prefix,
-                    semver.version.major,
-                    semver.version.minor,
-                    semver.version.patch,
-                    semver.candidate.delimiter,
-                    semver.version.candidate
-                )
-            } else {
-                format!(
-                    "{}{}.{}.{}",
-                    semver.format.prefix,
-                    semver.version.major,
-                    semver.version.minor,
-                    semver.version.patch
-                )
-            }
-        }
-        VersionType::CalVer { .. } => version.to_string()?,
-    };
-
-    Ok(tag_name)
 }
 
 fn git_tag_exists(tag_name: &str) -> Result<bool, BumpError> {
@@ -407,14 +286,12 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 
-    let tag_name = build_tag_name(version)?;
+    let tag_name = version.to_string(&PrintType::Regular)?;
 
-    // Check if the tag already exists
     if git_tag_exists(&tag_name)? {
         return Err(BumpError::Git(format!("Tag '{tag_name}' already exists")));
     }
 
-    // Create the tag
     let mut cmd = ProcessCommand::new("git");
     cmd.args(["tag", "-a", &tag_name]);
 

@@ -37,9 +37,10 @@ promotion = "minor"
 delimiter = "-rc"
 
 # Development suffix strategies:
-#  - "git_sha" : append 7 char sha1 of the current commit (default)
-#  - "branch"  : append the current git branch name
-#  - "full"    : append <branch>_<sha1>
+#  - "git_sha"  : append 7 char sha1 of the current commit (default)
+#  - "branch"   : append the current git branch name
+#  - "full"     : append <branch>_<sha1>
+#  - "distance" : append commits since the latest reachable tag (pair with --label)
 [semver.development]
 promotion = "git_sha"
 delimiter = "+"
@@ -72,7 +73,26 @@ Current version numbers. This section is automatically updated by bump commands.
   - `"git_sha"`: Append 7-character commit SHA (default)
   - `"branch"`: Append current git branch name
   - `"full"`: Append `<branch>_<sha>`
-- **`delimiter`**: Separator for development versions (default: "+")
+  - `"distance"`: Append the number of commits since the latest reachable tag
+    (`git describe`-style), falling back to the total commit count when no tag
+    exists. Monotonic along a single line of history, computed at print time with
+    no stored state — useful for telling dev builds apart at a glance.
+- **`delimiter`**: Separator for development versions (default: "+"). Use `"-"`
+  to place the suffix in the SemVer pre-release slot so it participates in
+  version ordering.
+
+##### Phase labels with `--label`
+`--label <name>` prefixes the development suffix with a phase name, so a single
+`bump.toml` can serve every branch in a gitflow-style workflow without edits:
+
+```bash
+bump --print-full --label dev    # develop  -> 1.7.0-dev.4
+bump --print-full --label rc     # release  -> 1.7.0-rc.3
+```
+
+The label is only applied to development (untagged) builds; a tagged release
+commit always prints the bare base version. Pair `promotion = "distance"` with
+`delimiter = "-"` to get sortable, human-readable dev versions like `1.7.0-dev.4`.
 
 ### SemVer Commands
 

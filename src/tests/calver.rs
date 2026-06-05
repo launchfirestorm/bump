@@ -1,195 +1,105 @@
 use super::*;
-use tempfile::TempDir;
+use chrono::Datelike;
 
 #[test]
-fn from_file_reads_calver_variant() {
-    let temp_dir = TempDir::new().unwrap();
+fn calendar_bump_updates_date_fields_for_calver() {
+    let mut version = make_calver("");
+    let before = chrono::Utc::now();
+
+    version.bump(&BumpType::Calendar).unwrap();
+
+    assert_eq!(version.version.mode, "calver");
+    assert_eq!(version.version.major, before.year() as u32);
+    assert_eq!(version.version.minor, Some(before.month()));
+    assert_eq!(version.version.patch, Some(before.day()));
+}
+
+#[test]
+fn calendar_bump_rejected_for_semver() {
+    let mut version = make_semver("v", 1, 2, 3, 0);
+
+    let err = version.bump(&BumpType::Calendar).unwrap_err();
+    match err {
+        BumpError::LogicError(msg) => {
+            assert!(msg.contains("Operation only valid for version.type = 'calver'"));
+        }
+        _ => panic!("expected LogicError"),
+    }
+}
+
+#[test]
+fn calendar_bump_increments_phase_distance_when_same_day() {
+    let now = chrono::Utc::now();
+    let mut version = Version {
+        path: "test.toml".into(),
+        timestamp: TimestampTable {
+            format: "%Y-%m-%d %H:%M:%S %Z".to_string(),
+            last: "2026-01-01 00:00:00 UTC".to_string(),
+        },
+        version: VersionTable {
+            mode: "calver".to_string(),
+            prefix: "".to_string(),
+            delimiter: ".".to_string(),
+            major: now.year() as u32,
+            minor: Some(now.month()),
+            patch: Some(now.day()),
+        },
+        phase: PhaseTable {
+            prefix: "-".to_string(),
+            name: "".to_string(),
+            delimiter: "-".to_string(),
+            distance: 4,
+        },
+        suffix: SuffixTable {
+            mode: "git_sha".to_string(),
+            delimiter: "+".to_string(),
+        },
+    };
+
+    version.bump(&BumpType::Calendar).unwrap();
+
+    assert_eq!(version.phase.distance, 5);
+}
+
+#[test]
+fn to_file_calver_remaps_major_minor_patch_keys() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    write_calver_config(&bump_path, "2026", Some("03"), Some("12"), 0);
+    let content = r#"[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "2026-01-01 00:00:00 UTC"
+
+[version]
+mode = "calver"
+prefix = ""
+delimiter = "."
+major = 2026
+minor = 6
+patch = 5
+
+[phase]
+prefix = "-"
+name = ""
+delimiter = "-"
+distance = 0
+
+[suffix]
+mode = "git_sha"
+delimiter = "+"
+"#;
+    write_bump_toml(&bump_path, content);
 
     let version = Version::from_file(&bump_path).unwrap();
+    version.to_file().unwrap();
 
-    match version.version_type {
-        VersionType::CalVer(calver) => {
-            assert_eq!(calver.format.delimiter, ".");
-            assert_eq!(calver.version.year, "2026");
-            assert_eq!(calver.version.month.as_deref(), Some("03"));
-            assert_eq!(calver.version.day.as_deref(), Some("12"));
-            assert_eq!(calver.conflict.revision, 0);
-        }
-        _ => panic!("expected CalVer variant"),
-    }
-}
+    let rewritten = std::fs::read_to_string(&bump_path).unwrap();
+    let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
+    let table = parsed.get("version").unwrap().as_table().unwrap();
 
-#[test]
-fn file_init_writes_calver_template() {
-    let temp_dir = TempDir::new().unwrap();
-    let bump_path = temp_dir.path().join("bump.toml");
-    let version = Version {
-        version_type: VersionType::CalVer(default_calver("")),
-        path: bump_path.clone(),
-    };
-
-    version.file_init().unwrap();
-
-    let content = std::fs::read_to_string(&bump_path).unwrap();
-    assert!(content.contains("[calver.format]"));
-    assert!(content.contains("[calver.version]"));
-    assert!(content.contains("[calver.conflict]"));
-    assert!(content.contains("revision = 0"));
-}
-
-#[test]
-fn to_string_calver_includes_revision_only_when_nonzero() {
-    let _repo = create_temp_dir();
-    let mut version = make_calver("v");
-
-    let base = version.to_string().unwrap();
-    assert!(!base.contains("-0"));
-
-    match &mut version.version_type {
-        VersionType::CalVer(calver) => calver.conflict.revision = 2,
-        _ => panic!("expected CalVer variant"),
-    }
-
-    let with_revision = version.to_string().unwrap();
-    assert!(with_revision.ends_with("-2"));
-}
-
-#[test]
-fn bump_calendar_same_day_increments_revision() {
-    let now = chrono::Utc::now();
-    let year = now.format("%Y").to_string();
-    let month = now.format("%m").to_string();
-    let day = now.format("%d").to_string();
-
-    let mut version = Version {
-        version_type: VersionType::CalVer(CalVer {
-            format: crate::version::CalVerFormat {
-                prefix: "".to_string(),
-                delimiter: ".".to_string(),
-                year: "%Y".to_string(),
-                month: Some("%m".to_string()),
-                day: Some("%d".to_string()),
-            },
-            version: crate::version::CalVerVersion {
-                year,
-                month: Some(month),
-                day: Some(day),
-            },
-            conflict: crate::version::CalVerConflict {
-                revision: 7,
-                delimiter: "-".to_string(),
-            },
-        }),
-        path: "unused.toml".into(),
-    };
-
-    version.bump(&BumpType::Calendar).unwrap();
-
-    match version.version_type {
-        VersionType::CalVer(calver) => assert_eq!(calver.conflict.revision, 8),
-        _ => panic!("expected CalVer variant"),
-    }
-}
-
-#[test]
-fn bump_calendar_new_day_resets_revision_and_updates_date() {
-    let now = chrono::Utc::now();
-    let previous = now - chrono::Duration::days(1);
-
-    let mut version = Version {
-        version_type: VersionType::CalVer(CalVer {
-            format: crate::version::CalVerFormat {
-                prefix: "".to_string(),
-                delimiter: ".".to_string(),
-                year: "%Y".to_string(),
-                month: Some("%m".to_string()),
-                day: Some("%d".to_string()),
-            },
-            version: crate::version::CalVerVersion {
-                year: previous.format("%Y").to_string(),
-                month: Some(previous.format("%m").to_string()),
-                day: Some(previous.format("%d").to_string()),
-            },
-            conflict: crate::version::CalVerConflict {
-                revision: 5,
-                delimiter: "-".to_string(),
-            },
-        }),
-        path: "unused.toml".into(),
-    };
-
-    version.bump(&BumpType::Calendar).unwrap();
-
-    match version.version_type {
-        VersionType::CalVer(calver) => {
-            assert_eq!(calver.conflict.revision, 0);
-            assert_eq!(calver.version.year, now.format("%Y").to_string());
-            assert_eq!(calver.version.month, Some(now.format("%m").to_string()));
-            assert_eq!(calver.version.day, Some(now.format("%d").to_string()));
-        }
-        _ => panic!("expected CalVer variant"),
-    }
-}
-
-#[test]
-fn bump_calver_rejects_non_calendar_bumps() {
-    let mut version = make_calver("");
-
-    for bump in [
-        BumpType::Point(PointType::Major),
-        BumpType::Candidate,
-        BumpType::Release,
-        BumpType::Prefix("x".to_string()),
-    ] {
-        let err = version.bump(&bump).unwrap_err();
-        match err {
-            BumpError::LogicError(msg) => {
-                assert!(msg.contains("CalVer only supports --calendar"));
-            }
-            _ => panic!("expected LogicError"),
-        }
-    }
-}
-
-#[test]
-fn to_base_string_calver_returns_error() {
-    let version = make_calver("");
-    let err = version.to_base_string().unwrap_err();
-
-    match err {
-        BumpError::LogicError(msg) => {
-            assert!(msg.contains("base version only applies to semantic versioning"));
-        }
-        _ => panic!("expected LogicError"),
-    }
-}
-
-#[test]
-fn get_timestamp_on_calver_returns_error() {
-    let version = make_calver("");
-    let err = version.get_timestamp().unwrap_err();
-
-    match err {
-        BumpError::LogicError(msg) => {
-            assert!(msg.contains("calendar versioning"));
-        }
-        _ => panic!("expected LogicError"),
-    }
-}
-
-#[test]
-fn build_tag_name_for_calver_uses_rendered_version_string() {
-    let mut version = make_calver("v");
-
-    let stable_tag = build_tag_name(&version).unwrap();
-    let stable_text = version.to_string().unwrap();
-    assert_eq!(stable_tag, stable_text);
-
-    if let VersionType::CalVer(calver) = &mut version.version_type {
-        calver.conflict.revision = 3;
-    }
-    let conflict_tag = build_tag_name(&version).unwrap();
-    assert!(conflict_tag.ends_with("-3"));
+    assert_eq!(table.get("year").and_then(|v| v.as_integer()), Some(2026));
+    assert_eq!(table.get("month").and_then(|v| v.as_integer()), Some(6));
+    assert_eq!(table.get("day").and_then(|v| v.as_integer()), Some(5));
+    assert!(!table.contains_key("major"));
+    assert!(!table.contains_key("minor"));
+    assert!(!table.contains_key("patch"));
 }

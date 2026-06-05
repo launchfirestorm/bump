@@ -1,4 +1,4 @@
-use crate::{bump::{BumpError, resolve_path}, version::Version};
+use crate::{bump::{PrintType, BumpError, resolve_path}, version::Version};
 use clap::ArgMatches;
 use toml_edit::DocumentMut;
 use std::fs;
@@ -6,7 +6,8 @@ use std::path::Path;
 
 /// Update a file with the version from the bumpfile
 pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
-    let version = Version::from_argmatches(matches)?;
+    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
+    let version = Version::from_file(&resolve_path(bumpfile))?;
     let path_str = matches
         .get_one::<String>("path")
         .ok_or_else(|| BumpError::IoError(std::io::Error::new(
@@ -24,8 +25,6 @@ pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
     }
 }
 
-// NOTE: version.to_root_string() is preffered since we haven't tagged yet
-// Cargo.toml doesn't accept a character prefix in the version number.
 pub fn cargo_toml(
     version: &Version,
     path: &Path,
@@ -37,7 +36,7 @@ pub fn cargo_toml(
         .map_err(|e| BumpError::ParseError(format!("failed to parse {}: {}", path.display(), e)))?;
 
     // Cargo `package.version` must be semver without a leading `v` (or other prefix).
-    let v_str = version.to_root_string(false)?;
+    let v_str = version.to_string(&PrintType::NoPrefix)?;
     println!("cargo doesn't like a character prefix in Cargo.toml, stripping prefix");
 
     if let Some(package) = doc.get_mut("package") {
@@ -75,7 +74,7 @@ pub fn pyproject_toml(
     println!("{cyan}  devN is the development version.{reset}");
     println!("{yellow}  Public version identifiers MUST NOT include leading or trailing whitespace.{reset}");
 
-    let v_str = version.to_root_string(false)?;
+    let v_str = version.to_string(&PrintType::Regular)?;
     if let Some(project) = doc.get_mut("project") {
         project["version"] = toml_edit::value(v_str.as_str());
     }
