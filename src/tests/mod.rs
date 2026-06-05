@@ -8,7 +8,7 @@ pub use crate::bump::{
     build_tag_name, create_git_tag, BumpError, BumpType, PointType,
 };
 pub use crate::version::{
-    default_calver, default_semver, CalVer, SemVer, Version, VersionType,
+    default_calver, default_semver, SemVer, Version, VersionType,
 };
 
 pub struct TestRepo {

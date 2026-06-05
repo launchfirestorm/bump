@@ -21,16 +21,7 @@ fn egress(result: Result<(), BumpError>) -> ExitCode {
 fn main() -> ExitCode {
     let matches = cli::cli().get_matches();
     match matches.subcommand() {
-        Some(("init", sub_matches)) => {
-            let bumpfile = sub_matches.get_one::<String>("bumpfile").unwrap();
-            let use_calver = sub_matches.get_flag("calver");
-            // Set default prefix based on version type: "v" for SemVer, "" for CalVer
-            let prefix = sub_matches
-                .get_one::<String>("prefix")
-                .map(|s| s.as_str())
-                .unwrap_or(if use_calver { "" } else { "v" });
-            egress(bump::initialize(bumpfile, prefix, use_calver))
-        }
+        Some(("init", sub_matches)) => egress(bump::initialize(sub_matches)),
         Some(("gen", sub_matches)) => {
             let lang_str = sub_matches
                 .get_one::<String>("lang")
@@ -46,37 +37,8 @@ fn main() -> ExitCode {
             egress(bump::generate(sub_matches, &lang))
         }
         Some(("tag", sub_matches)) => egress(bump::tag_version(sub_matches)),
-        Some(("update", sub_matches)) => { egress(update::modify_file(sub_matches)) }
-        _ => {
-            if matches.contains_id("print-group") {
-                let version = match bump::get_version(&matches) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        return egress(Err(err));
-                    }
-                };
-                let print_type = if matches.get_flag("print-base") {
-                    bump::PrintType::Base
-                } else if matches.get_flag("print-full") {
-                    bump::PrintType::Full
-                } else if matches.get_flag("print-with-timestamp") {
-                    bump::PrintType::Timestamp
-                } else {
-                    bump::PrintType::Root
-                };
-                let label = matches.get_one::<String>("label").map(|s| s.as_str());
-                egress(bump::print(&version, &print_type, label))
-            } else if matches.contains_id("point-release")
-                || matches.contains_id("candidate-release")
-                || matches.contains_id("calendar-release")
-                || matches.get_one::<String>("prefix").is_some()
-            {
-                egress(bump::apply(&matches))
-            } else {
-                egress(Err(BumpError::LogicError(
-                    "no action specified. Run with --help to see available options.".to_string(),
-                )))
-            }
-        }
+        Some(("update", sub_matches)) => egress(update::modify_file(sub_matches)),
+        Some(("print", sub_matches)) => egress(bump::print(sub_matches)),
+        _ => egress(bump::apply(&matches))
     }
 }
