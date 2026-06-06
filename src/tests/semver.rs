@@ -9,7 +9,7 @@ fn from_file_reads_semver_schema() {
 
     let version = Version::from_file(&bump_path).unwrap();
 
-    assert_eq!(version.version.mode, "semver");
+    assert_eq!(version.version.mode, VersionMode::Semver);
     assert_eq!(version.version.prefix, "v");
     assert_eq!(version.version.major, 1);
     assert_eq!(version.version.minor, Some(2));
@@ -60,7 +60,7 @@ delimiter = "+"
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
-        BumpError::ParseError(msg) => assert!(msg.contains("Invalid version type")),
+        BumpError::ParseError(msg) => assert!(msg.contains("nope")),
         _ => panic!("expected ParseError"),
     }
 }
@@ -95,7 +95,7 @@ delimiter = "+"
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
-        BumpError::ParseError(msg) => assert!(msg.contains("Invalid suffix type")),
+        BumpError::ParseError(msg) => assert!(msg.contains("unknown")),
         _ => panic!("expected ParseError"),
     }
 }
@@ -109,10 +109,26 @@ fn create_file_writes_template() {
     version.create_file().unwrap();
 
     let content = std::fs::read_to_string(&bump_path).unwrap();
+    let template = include_str!("../templates/bump.toml");
     assert!(content.contains("[timestamp]"));
     assert!(content.contains("[version]"));
     assert!(content.contains("[phase]"));
     assert!(content.contains("[suffix]"));
+    assert!(content.contains("mode = \"semver\""));
+    assert!(content.contains("mode = \"git_sha\""));
+    assert!(!content.contains("{timestamp}"));
+    assert!(template.contains("{timestamp}"));
+}
+
+#[test]
+fn from_file_round_trips_version_and_suffix_modes() {
+    let temp_dir = TempDir::new().unwrap();
+    let bump_path = temp_dir.path().join("bump.toml");
+    write_test_config(&bump_path, (2, 0, 1, 0));
+
+    let version = Version::from_file(&bump_path).unwrap();
+    assert_eq!(version.version.mode, VersionMode::Semver);
+    assert_eq!(version.suffix.mode, SuffixMode::GitSha);
 }
 
 #[test]

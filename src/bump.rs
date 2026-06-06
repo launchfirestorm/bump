@@ -175,12 +175,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         version.version.prefix.clone_from(prefix);
     }
     if let Some(suffix) = matches.get_one::<String>("suffix") {
-        if suffix != "git_sha" && suffix != "branch" {
-            return Err(BumpError::LogicError(format!(
-                "Invalid suffix mode: '{suffix}'. Expected 'git_sha' or 'branch'."
-            )));
-        }
-        version.suffix.mode.clone_from(suffix);
+        version.suffix.mode = crate::version::SuffixMode::parse(suffix)?;
     }
 
     if has_formal {
@@ -208,7 +203,7 @@ fn git_cmd() -> ProcessCommand {
                 cmd.arg("-C").arg(path);
             }
         });
-        return cmd;
+        cmd
     }
 
     #[cfg(not(test))]

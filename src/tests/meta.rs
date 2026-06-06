@@ -48,7 +48,7 @@ fn meta_updates_suffix_mode_to_branch() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.suffix.mode, "branch");
+    assert_eq!(version.suffix.mode, SuffixMode::Branch);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn meta_updates_suffix_mode_to_git_sha() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.suffix.mode, "git_sha");
+    assert_eq!(version.suffix.mode, SuffixMode::GitSha);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn meta_rejects_invalid_suffix_mode() {
     }
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.suffix.mode, "git_sha");
+    assert_eq!(version.suffix.mode, SuffixMode::GitSha);
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn meta_applies_prefix_then_suffix_in_separate_invocations() {
 
     let version = Version::from_file(&bump_path).unwrap();
     assert_eq!(version.version.prefix, "pkg-");
-    assert_eq!(version.suffix.mode, "branch");
+    assert_eq!(version.suffix.mode, SuffixMode::Branch);
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn meta_applies_prefix_and_suffix_in_one_invocation() {
 
     let version = Version::from_file(&bump_path).unwrap();
     assert_eq!(version.version.prefix, "pkg-");
-    assert_eq!(version.suffix.mode, "branch");
+    assert_eq!(version.suffix.mode, SuffixMode::Branch);
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::bump::{BumpError, PrintType};
-use crate::version::Version;
+use crate::version::{Version, VersionMode};
 use std::fs;
 use std::path::Path;
 
@@ -34,30 +34,19 @@ impl Language {
         }
     }
 
-    const fn name(self) -> &'static str {
-        match self {
-            Self::C => "C",
-            Self::Go => "Go",
-            Self::Java => "Java",
-            Self::CSharp => "C#",
-            Self::Python => "Python",
+    fn template(self, mode: VersionMode) -> &'static str {
+        match (self, mode) {
+            (Self::C, VersionMode::Semver) => include_str!("templates/c/semver.h"),
+            (Self::C, VersionMode::Calver) => include_str!("templates/c/calver.h"),
+            (Self::Go, VersionMode::Semver) => include_str!("templates/go/semver.go"),
+            (Self::Go, VersionMode::Calver) => include_str!("templates/go/calver.go"),
+            (Self::Java, VersionMode::Semver) => include_str!("templates/java/semver.java"),
+            (Self::Java, VersionMode::Calver) => include_str!("templates/java/calver.java"),
+            (Self::CSharp, VersionMode::Semver) => include_str!("templates/csharp/semver.cs"),
+            (Self::CSharp, VersionMode::Calver) => include_str!("templates/csharp/calver.cs"),
+            (Self::Python, VersionMode::Semver) => include_str!("templates/python/semver.py"),
+            (Self::Python, VersionMode::Calver) => include_str!("templates/python/calver.py"),
         }
-    }
-
-    fn template(self, mode: &str) -> Result<&'static str, BumpError> {
-        Ok(match (self, mode) {
-            (Self::C, "semver") => include_str!("gen_tmpls/c/semver.h"),
-            (Self::C, "calver") => include_str!("gen_tmpls/c/calver.h"),
-            (Self::Go, "semver") => include_str!("gen_tmpls/go/semver.go"),
-            (Self::Go, "calver") => include_str!("gen_tmpls/go/calver.go"),
-            (Self::Java, "semver") => include_str!("gen_tmpls/java/semver.java"),
-            (Self::Java, "calver") => include_str!("gen_tmpls/java/calver.java"),
-            (Self::CSharp, "semver") => include_str!("gen_tmpls/csharp/semver.cs"),
-            (Self::CSharp, "calver") => include_str!("gen_tmpls/csharp/calver.cs"),
-            (Self::Python, "semver") => include_str!("gen_tmpls/python/semver.py"),
-            (Self::Python, "calver") => include_str!("gen_tmpls/python/calver.py"),
-            (_, mode) => return Err(unsupported_mode(self.name(), mode)),
-        })
     }
 }
 
@@ -83,12 +72,6 @@ fn output_fields(version: &Version) -> Result<OutputFields, BumpError> {
     })
 }
 
-fn unsupported_mode(lang: &str, mode: &str) -> BumpError {
-    BumpError::LogicError(format!(
-        "Unsupported version type for {lang} output: {mode}"
-    ))
-}
-
 fn render_calver(tmpl: &str, f: &OutputFields) -> String {
     tmpl.replace("{version_string}", &f.version_string)
         .replace("{timestamp}", &f.timestamp)
@@ -104,13 +87,12 @@ fn render_semver(tmpl: &str, f: &OutputFields) -> String {
         .replace("{timestamp}", &f.timestamp)
 }
 
-fn render(lang: Language, mode: &str, f: &OutputFields) -> Result<String, BumpError> {
-    let tmpl = lang.template(mode)?;
-    Ok(match mode {
-        "calver" => render_calver(tmpl, f),
-        "semver" => render_semver(tmpl, f),
-        mode => return Err(unsupported_mode(lang.name(), mode)),
-    })
+fn render(lang: Language, mode: VersionMode, f: &OutputFields) -> String {
+    let tmpl = lang.template(mode);
+    match mode {
+        VersionMode::Calver => render_calver(tmpl, f),
+        VersionMode::Semver => render_semver(tmpl, f),
+    }
 }
 
 fn write_output(lang: Language, path: &Path, content: String) -> Result<(), BumpError> {
@@ -121,7 +103,7 @@ fn write_output(lang: Language, path: &Path, content: String) -> Result<(), Bump
 
 fn lang_output(lang: Language, version: &Version, path: &Path) -> Result<(), BumpError> {
     let f = output_fields(version)?;
-    let content = render(lang, version.version.mode.as_str(), &f)?;
+    let content = render(lang, version.version.mode, &f);
     write_output(lang, path, content)
 }
 

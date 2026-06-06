@@ -22,7 +22,7 @@ fn gen_c_semver_writes_expected_defines() {
 
 #[test]
 fn gen_tmpls_c_semver_template_is_embedded() {
-    let tmpl = include_str!("../../gen_tmpls/c/semver.h");
+    let tmpl = include_str!("../templates/c/semver.h");
     assert!(tmpl.contains("#define VERSION_PREFIX \"{prefix}\""));
     assert!(tmpl.contains("https://github.com/launchfirestorm/bump"));
 }

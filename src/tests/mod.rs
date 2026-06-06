@@ -5,7 +5,9 @@ use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
 pub use crate::bump::{BumpError, BumpType, PrintType, create_git_tag};
-pub use crate::version::{PhaseTable, SuffixTable, TimestampTable, Version, VersionTable};
+pub use crate::version::{
+    PhaseTable, SuffixMode, SuffixTable, TimestampTable, Version, VersionMode, VersionTable,
+};
 
 pub struct TestRepo {
     temp_dir: TempDir,
@@ -173,7 +175,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             last: "2026-01-01 00:00:00 UTC".to_string(),
         },
         version: VersionTable {
-            mode: "semver".to_string(),
+            mode: VersionMode::Semver,
             prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             major,
@@ -191,7 +193,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             distance: candidate,
         },
         suffix: SuffixTable {
-            mode: "git_sha".to_string(),
+            mode: SuffixMode::GitSha,
             delimiter: "+".to_string(),
         },
     }
@@ -205,7 +207,7 @@ pub fn make_calver(prefix: &str) -> Version {
             last: "2026-01-01 00:00:00 UTC".to_string(),
         },
         version: VersionTable {
-            mode: "calver".to_string(),
+            mode: VersionMode::Calver,
             prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             major: 2026,
@@ -219,7 +221,7 @@ pub fn make_calver(prefix: &str) -> Version {
             distance: 0,
         },
         suffix: SuffixTable {
-            mode: "git_sha".to_string(),
+            mode: SuffixMode::GitSha,
             delimiter: "+".to_string(),
         },
     }
