@@ -34,7 +34,6 @@ pub enum BumpType {
 pub enum BumpError {
     IoError(io::Error),
     ParseError(String),
-    TomlError(toml::de::Error),
     LogicError(String),
     Git(String),
 }
@@ -62,7 +61,6 @@ impl fmt::Display for BumpError {
                 }
             }
             Self::ParseError(field) => write!(f, "bump error: parse >> {field}"),
-            Self::TomlError(err) => write!(f, "bump error: config >> {err}"),
             Self::LogicError(msg) => write!(f, "bump error >> {msg}"),
             Self::Git(msg) => write!(f, "bump error: git >> {msg}"),
         }
@@ -72,12 +70,6 @@ impl fmt::Display for BumpError {
 impl From<io::Error> for BumpError {
     fn from(err: io::Error) -> Self {
         Self::IoError(err)
-    }
-}
-
-impl From<toml::de::Error> for BumpError {
-    fn from(err: toml::de::Error) -> Self {
-        Self::TomlError(err)
     }
 }
 

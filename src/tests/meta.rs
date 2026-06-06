@@ -131,7 +131,11 @@ fn meta_and_formal_in_one_invocation() {
     write_test_config(&bump_path, (1, 2, 3, 0));
 
     with_cwd(temp_dir.path(), || {
-        apply(&apply_matches("bump.toml", &["--prefix", "rel-", "--patch"])).unwrap();
+        apply(&apply_matches(
+            "bump.toml",
+            &["--prefix", "rel-", "--patch"],
+        ))
+        .unwrap();
     });
 
     let version = Version::from_file(&bump_path).unwrap();

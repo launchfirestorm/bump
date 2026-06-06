@@ -236,5 +236,6 @@ pub fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
 }
 
 mod calver;
+mod codegen;
 mod meta;
 mod semver;

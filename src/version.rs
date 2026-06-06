@@ -118,7 +118,7 @@ patch = 0
 [phase]  
 prefix = "-"
 name = ""
-delimiter = "."
+delimiter = "-"
 distance = 0
 
 # suffix type:
