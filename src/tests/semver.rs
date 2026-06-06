@@ -34,11 +34,8 @@ fn from_file_missing_file_returns_logic_error() {
 fn from_file_rejects_invalid_version_type() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = r#"[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-01-01 00:00:00 UTC"
-
-[version]
+    let content = format!(
+        r#"{timestamp}[version]
 mode = "nope"
 prefix = "v"
 delimiter = "."
@@ -55,8 +52,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#;
-    write_bump_toml(&bump_path, content);
+"#,
+        timestamp = timestamp_toml_section(),
+    );
+    write_bump_toml(&bump_path, &content);
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
@@ -69,11 +68,8 @@ delimiter = "+"
 fn from_file_rejects_invalid_suffix_type() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = r#"[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-01-01 00:00:00 UTC"
-
-[version]
+    let content = format!(
+        r#"{timestamp}[version]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -90,8 +86,10 @@ distance = 0
 [suffix]
 mode = "unknown"
 delimiter = "+"
-"#;
-    write_bump_toml(&bump_path, content);
+"#,
+        timestamp = timestamp_toml_section(),
+    );
+    write_bump_toml(&bump_path, &content);
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
@@ -135,11 +133,8 @@ fn from_file_round_trips_version_and_suffix_modes() {
 fn to_file_semver_remaps_year_month_day_keys() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = r#"[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-01-01 00:00:00 UTC"
-
-[version]
+    let content = format!(
+        r#"{timestamp}[version]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -156,8 +151,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#;
-    write_bump_toml(&bump_path, content);
+"#,
+        timestamp = timestamp_toml_section(),
+    );
+    write_bump_toml(&bump_path, &content);
 
     let version = Version::from_file(&bump_path).unwrap();
     version.to_file().unwrap();

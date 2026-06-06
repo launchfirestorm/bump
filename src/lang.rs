@@ -87,26 +87,19 @@ fn render_semver(tmpl: &str, f: &OutputFields) -> String {
         .replace("{timestamp}", &f.timestamp)
 }
 
-fn render(lang: Language, mode: VersionMode, f: &OutputFields) -> String {
-    let tmpl = lang.template(mode);
-    match mode {
-        VersionMode::Calver => render_calver(tmpl, f),
-        VersionMode::Semver => render_semver(tmpl, f),
-    }
-}
-
 fn write_output(lang: Language, path: &Path, content: String) -> Result<(), BumpError> {
     fs::write(path, content).map_err(BumpError::IoError)?;
     println!("{} written to {}", lang.file_description(), path.display());
     Ok(())
 }
 
-fn lang_output(lang: Language, version: &Version, path: &Path) -> Result<(), BumpError> {
-    let f = output_fields(version)?;
-    let content = render(lang, version.version.mode, &f);
-    write_output(lang, path, content)
-}
-
 pub fn output_file(lang: Language, version: &Version, path: &Path) -> Result<(), BumpError> {
-    lang_output(lang, version, path)
+    let fields = output_fields(version)?;
+    let mode = version.version.mode;
+    let tmpl = lang.template(mode);
+    let content = match mode {
+        VersionMode::Calver => render_calver(tmpl, &fields),
+        VersionMode::Semver => render_semver(tmpl, &fields),
+    };
+    write_output(lang, path, content)
 }

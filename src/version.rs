@@ -114,38 +114,24 @@ pub struct Version {
     pub suffix: SuffixTable,
 }
 
+const INIT_TEMPLATE_TIMESTAMP: &str = "1970-01-01 00:00:00 UTC";
+
 impl Version {
     pub fn default(path: &Path) -> Self {
-        Self {
-            path: path.to_path_buf(),
-            timestamp: TimestampTable {
-                format: "%Y-%m-%d %H:%M:%S".to_string(),
-                last: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            },
-            version: VersionTable {
-                mode: VersionMode::Semver,
-                prefix: "v".to_string(),
-                delimiter: ".".to_string(),
-                major: 0,
-                minor: Some(1),
-                patch: Some(0),
-            },
-            phase: PhaseTable {
-                prefix: "-".to_string(),
-                name: String::new(),
-                delimiter: "-".to_string(),
-                distance: 0,
-            },
-            suffix: SuffixTable {
-                mode: SuffixMode::GitSha,
-                delimiter: "+".to_string(),
-            },
-        }
+        let content = include_str!("templates/bump.toml")
+            .replace("{timestamp}", INIT_TEMPLATE_TIMESTAMP);
+        let mut version: Self = toml::from_str(&content).expect("init template must deserialize");
+        version.path = path.to_path_buf();
+        version.timestamp.last = chrono::Utc::now()
+            .format(&version.timestamp.format)
+            .to_string();
+        version
     }
 
     pub fn create_file(&self) -> Result<(), BumpError> {
-        let strftime = "%Y-%m-%d %H:%M:%S %Z";
-        let current_timestamp = chrono::Utc::now().format(strftime).to_string();
+        let current_timestamp = chrono::Utc::now()
+            .format(&self.timestamp.format)
+            .to_string();
         let content =
             include_str!("templates/bump.toml").replace("{timestamp}", &current_timestamp);
         fs::write(&self.path, content).map_err(BumpError::IoError)
@@ -168,12 +154,12 @@ impl Version {
         let mode = version
             .get("mode")
             .and_then(|v| v.as_str())
-            .unwrap_or("semver");
+            .unwrap_or(VersionMode::Semver.as_str());
         let has_calver_keys = ["year", "month", "day"]
             .iter()
             .any(|key| version.contains_key(key));
 
-        if mode == "semver" && has_calver_keys {
+        if mode == VersionMode::Semver.as_str() && has_calver_keys {
             println!(
                 "bump warning: [version].mode is semver, but found calver keys (year/month/day) in {}. \
                 \nThey will be treated as major/minor/patch and rewritten on save.",
@@ -387,6 +373,11 @@ impl Version {
         }
     }
 
+    fn clear_phase(&mut self) {
+        self.phase.name = String::new();
+        self.phase.distance = 0;
+    }
+
     pub fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         let now = chrono::Utc::now();
         match bump_type {
@@ -395,21 +386,18 @@ impl Version {
                 self.version.major += 1;
                 self.version.minor = self.version.minor.map(|_| 0);
                 self.version.patch = self.version.patch.map(|_| 0);
-                self.phase.name = String::new();
-                self.phase.distance = 0;
+                self.clear_phase();
             }
             BumpType::Minor => {
                 self.right_mode(VersionMode::Semver)?;
                 self.version.minor = self.version.minor.map(|m| m + 1);
                 self.version.patch = self.version.patch.map(|_| 0);
-                self.phase.name = String::new();
-                self.phase.distance = 0;
+                self.clear_phase();
             }
             BumpType::Patch => {
                 self.right_mode(VersionMode::Semver)?;
                 self.version.patch = self.version.patch.map(|p| p + 1);
-                self.phase.name = String::new();
-                self.phase.distance = 0;
+                self.clear_phase();
             }
             BumpType::Phase(cli_phase_name) => {
                 if cli_phase_name == &self.phase.name {

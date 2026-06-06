@@ -134,6 +134,28 @@ pub fn git_rev_parse_short_in(path: &Path) -> String {
     run_git_in_output(path, &["rev-parse", "--short", "HEAD"])
 }
 
+pub const TEST_TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S %Z";
+
+pub fn test_timestamp_last() -> String {
+    chrono::Utc::now()
+        .format(TEST_TIMESTAMP_FORMAT)
+        .to_string()
+}
+
+pub fn test_timestamp_table() -> TimestampTable {
+    TimestampTable {
+        format: TEST_TIMESTAMP_FORMAT.to_string(),
+        last: test_timestamp_last(),
+    }
+}
+
+pub fn timestamp_toml_section() -> String {
+    format!(
+        "[timestamp]\nformat = \"{TEST_TIMESTAMP_FORMAT}\"\nlast = \"{}\"\n\n",
+        test_timestamp_last()
+    )
+}
+
 pub fn write_bump_toml(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
@@ -141,11 +163,7 @@ pub fn write_bump_toml(path: &Path, content: &str) {
 pub fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
     let (major, minor, patch, distance) = version;
     let content = format!(
-        r#"[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-01-01 00:00:00 UTC"
-
-[version]
+        r#"{timestamp}[version]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -162,7 +180,8 @@ distance = {distance}
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#
+"#,
+        timestamp = timestamp_toml_section(),
     );
     fs::write(path, content).unwrap();
 }
@@ -170,10 +189,7 @@ delimiter = "+"
 pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: u32) -> Version {
     Version {
         path: PathBuf::from("test.toml"),
-        timestamp: TimestampTable {
-            format: "%Y-%m-%d %H:%M:%S %Z".to_string(),
-            last: "2026-01-01 00:00:00 UTC".to_string(),
-        },
+        timestamp: test_timestamp_table(),
         version: VersionTable {
             mode: VersionMode::Semver,
             prefix: prefix.to_string(),
@@ -202,10 +218,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
 pub fn make_calver(prefix: &str) -> Version {
     Version {
         path: PathBuf::from("test.toml"),
-        timestamp: TimestampTable {
-            format: "%Y-%m-%d %H:%M:%S %Z".to_string(),
-            last: "2026-01-01 00:00:00 UTC".to_string(),
-        },
+        timestamp: test_timestamp_table(),
         version: VersionTable {
             mode: VersionMode::Calver,
             prefix: prefix.to_string(),

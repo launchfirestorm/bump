@@ -168,11 +168,8 @@ fn meta_suffix_branch_appears_in_printed_version() {
     let bump_path = repo.path().join("bump.toml");
     write_bump_toml(
         &bump_path,
-        r#"[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-01-01 00:00:00 UTC"
-
-[version]
+        &format!(
+            r#"{timestamp}[version]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -190,6 +187,8 @@ distance = 0
 mode = "git_sha"
 delimiter = "+"
 "#,
+            timestamp = timestamp_toml_section(),
+        ),
     );
 
     with_cwd(repo.path(), || {

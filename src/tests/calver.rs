@@ -32,10 +32,7 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
     let now = chrono::Utc::now();
     let mut version = Version {
         path: "test.toml".into(),
-        timestamp: TimestampTable {
-            format: "%Y-%m-%d %H:%M:%S %Z".to_string(),
-            last: "2026-01-01 00:00:00 UTC".to_string(),
-        },
+        timestamp: test_timestamp_table(),
         version: VersionTable {
             mode: VersionMode::Calver,
             prefix: String::new(),
@@ -65,11 +62,8 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
 fn to_file_calver_remaps_major_minor_patch_keys() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = r#"[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"
-last = "2026-01-01 00:00:00 UTC"
-
-[version]
+    let content = format!(
+        r#"{timestamp}[version]
 mode = "calver"
 prefix = ""
 delimiter = "."
@@ -86,8 +80,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#;
-    write_bump_toml(&bump_path, content);
+"#,
+        timestamp = timestamp_toml_section(),
+    );
+    write_bump_toml(&bump_path, &content);
 
     let version = Version::from_file(&bump_path).unwrap();
     version.to_file().unwrap();
