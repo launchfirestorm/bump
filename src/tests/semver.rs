@@ -150,9 +150,18 @@ delimiter = "+"
     let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
     let table = parsed.get("version").unwrap().as_table().unwrap();
 
-    assert_eq!(table.get("major").and_then(|v| v.as_integer()), Some(2026));
-    assert_eq!(table.get("minor").and_then(|v| v.as_integer()), Some(6));
-    assert_eq!(table.get("patch").and_then(|v| v.as_integer()), Some(5));
+    assert_eq!(
+        table.get("major").and_then(toml::Value::as_integer),
+        Some(2026)
+    );
+    assert_eq!(
+        table.get("minor").and_then(toml::Value::as_integer),
+        Some(6)
+    );
+    assert_eq!(
+        table.get("patch").and_then(toml::Value::as_integer),
+        Some(5)
+    );
     assert!(!table.contains_key("year"));
     assert!(!table.contains_key("month"));
     assert!(!table.contains_key("day"));
@@ -164,7 +173,10 @@ fn to_string_regular_uses_prefix_base_and_phase() {
     version.phase.prefix = "-".to_string();
     version.phase.delimiter = "-".to_string();
 
-    assert_eq!(version.to_string(&PrintType::Regular).unwrap(), "v1.2.3-rc-2");
+    assert_eq!(
+        version.to_string(&PrintType::Regular).unwrap(),
+        "v1.2.3-rc-2"
+    );
 }
 
 #[test]
@@ -182,7 +194,7 @@ fn to_string_with_suffix_uses_git_sha_in_git_repo() {
     let sha = git_rev_parse_short_in(repo.path());
     assert_eq!(
         version.to_string(&PrintType::WithSuffix).unwrap(),
-        format!("v1.2.3+{}", sha)
+        format!("v1.2.3+{sha}")
     );
 }
 
@@ -226,7 +238,9 @@ fn bump_patch_increments_patch_and_clears_phase() {
 fn bump_phase_increment_mode_increments_distance() {
     let mut version = make_semver("v", 1, 2, 3, 1);
 
-    version.bump(&BumpType::Phase("__increment__".to_string())).unwrap();
+    version
+        .bump(&BumpType::Phase("__increment__".to_string()))
+        .unwrap();
 
     assert_eq!(version.phase.name, "rc");
     assert_eq!(version.phase.distance, 2);

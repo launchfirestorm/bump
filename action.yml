@@ -1,8 +1,3 @@
-# Composite action: install the bump CLI from GitHub Releases for the host OS/arch.
-# Usage (repo root contains bump/):
-#   - uses: ./bump
-# Published:
-#   - uses: launchfirestorm/bump@v1
 name: install-bump
 description: Install bump CLI from GitHub Releases (Linux, macOS, Windows; amd64/arm64)
 author: tony

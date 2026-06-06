@@ -1,34 +1,34 @@
-use crate::{bump::{PrintType, BumpError, resolve_path}, version::Version};
+use crate::{
+    bump::{BumpError, PrintType, resolve_path},
+    version::Version,
+};
 use clap::ArgMatches;
-use toml_edit::DocumentMut;
 use std::fs;
 use std::path::Path;
+use toml_edit::DocumentMut;
 
 /// Update a file with the version from the bumpfile
 pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
     let version = Version::from_file(&resolve_path(bumpfile))?;
-    let path_str = matches
-        .get_one::<String>("path")
-        .ok_or_else(|| BumpError::IoError(std::io::Error::new(
+    let path_str = matches.get_one::<String>("path").ok_or_else(|| {
+        BumpError::IoError(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "path not provided"
-        )))?;
+            "path not provided",
+        ))
+    })?;
     let file_path = resolve_path(path_str);
-    
+
     match path_str.as_str() {
         "Cargo.toml" => cargo_toml(&version, &file_path),
         "pyproject.toml" => pyproject_toml(&version, &file_path),
         _ => Err(BumpError::LogicError(format!(
-            "Unsupported file type: {}", path_str
+            "Unsupported file type: {path_str}"
         ))),
     }
 }
 
-pub fn cargo_toml(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+pub fn cargo_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
 
     let mut doc = content
@@ -42,23 +42,22 @@ pub fn cargo_toml(
     if let Some(package) = doc.get_mut("package") {
         package["version"] = toml_edit::value(v_str.as_str());
     } else {
-        return Err(BumpError::ParseError(
-            format!("no [package] section found in {}", path.display()),
-        ));
+        return Err(BumpError::ParseError(format!(
+            "no [package] section found in {}",
+            path.display()
+        )));
     }
 
     fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
-    println!("Cargo.toml updated to version {}", v_str);
+    println!("Cargo.toml updated to version {v_str}");
     Ok(())
 }
 
-pub fn pyproject_toml(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+pub fn pyproject_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
 
-    let mut doc = content .parse::<DocumentMut>()
+    let mut doc = content
+        .parse::<DocumentMut>()
         .map_err(|e| BumpError::ParseError(format!("failed to parse {}: {}", path.display(), e)))?;
 
     // https://packaging.python.org/en/latest/version.html#public-version-identifiers
@@ -66,13 +65,17 @@ pub fn pyproject_toml(
     let cyan = "\x1b[36m";
     let purple = "\x1b[35m";
     let reset = "\x1b[0m";
-    println!("{yellow}Warning: pyproject.toml version string must comply with the following scheme:{reset}");
+    println!(
+        "{yellow}Warning: pyproject.toml version string must comply with the following scheme:{reset}"
+    );
     println!("{purple} [N!]N(.N)*[{{a|b|rc}}N][.postN][.devN]{reset}");
     println!("{cyan}  N, N!, and N.N are numeric components.{reset}");
     println!("{cyan}  {{a|b|rc}} is the alpha, beta, or release candidate suffix.{reset}");
     println!("{cyan}  postN is the post-release version.{reset}");
     println!("{cyan}  devN is the development version.{reset}");
-    println!("{yellow}  Public version identifiers MUST NOT include leading or trailing whitespace.{reset}");
+    println!(
+        "{yellow}  Public version identifiers MUST NOT include leading or trailing whitespace.{reset}"
+    );
 
     let v_str = version.to_string(&PrintType::Regular)?;
     if let Some(project) = doc.get_mut("project") {
@@ -80,6 +83,6 @@ pub fn pyproject_toml(
     }
 
     fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
-    println!("pyproject.toml updated to version {}", v_str);
+    println!("pyproject.toml updated to version {v_str}");
     Ok(())
 }

@@ -5,9 +5,9 @@ use std::process::ExitCode;
 mod bump;
 mod cli;
 mod lang;
-mod update;
 #[cfg(test)]
 mod tests;
+mod update;
 mod version;
 
 fn egress(result: Result<(), BumpError>) -> ExitCode {
@@ -26,19 +26,26 @@ fn main() -> ExitCode {
             let lang_str = sub_matches
                 .get_one::<String>("lang")
                 .expect("LANG not provided");
-            let lang = match Language::from_str(lang_str) {
-                Some(l) => l,
-                None => {
-                    return egress(Err(BumpError::LogicError(format!(
-                        "Invalid language specified: {lang_str}"
-                    ))));
-                }
+            let Some(lang) = Language::from_str(lang_str) else {
+                return egress(Err(BumpError::LogicError(format!(
+                    "Invalid language specified: {lang_str}"
+                ))));
             };
-            egress(bump::generate(sub_matches, &lang))
+            egress(bump::generate(sub_matches, lang))
         }
         Some(("tag", sub_matches)) => egress(bump::tag_version(sub_matches)),
         Some(("update", sub_matches)) => egress(update::modify_file(sub_matches)),
         Some(("print", sub_matches)) => egress(bump::print(sub_matches)),
-        _ => egress(bump::apply(&matches))
+        _ => {
+            if matches.contains_id("meta") {
+                egress(bump::meta(&matches))
+            } else if matches.contains_id("formal") {
+                egress(bump::apply(&matches))
+            } else {
+                egress(Err(BumpError::LogicError(
+                    "No valid command specified".to_string(),
+                )))
+            }
+        }
     }
 }

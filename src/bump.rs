@@ -1,5 +1,5 @@
 use crate::lang::{self, Language};
-use crate::version::{Version};
+use crate::version::Version;
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
@@ -26,7 +26,7 @@ pub enum BumpType {
     Major,
     Minor,
     Patch,
-    Phase(String),      // increment phase distance
+    Phase(String), // increment phase distance
     Calendar,
 }
 
@@ -54,30 +54,30 @@ pub enum PrintType {
 impl fmt::Display for BumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BumpError::IoError(err) => {
+            Self::IoError(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
-                    write!(f, "bump error: I/O >> file not found '{}'", err)
+                    write!(f, "bump error: I/O >> file not found '{err}'")
                 } else {
                     write!(f, "bump error: I/O >> {err}")
                 }
             }
-            BumpError::ParseError(field) => write!(f, "bump error: parse >> {field}"),
-            BumpError::TomlError(err) => write!(f, "bump error: config >> {err}"),
-            BumpError::LogicError(msg) => write!(f, "bump error >> {msg}"),
-            BumpError::Git(msg) => write!(f, "bump error: git >> {msg}"),
+            Self::ParseError(field) => write!(f, "bump error: parse >> {field}"),
+            Self::TomlError(err) => write!(f, "bump error: config >> {err}"),
+            Self::LogicError(msg) => write!(f, "bump error >> {msg}"),
+            Self::Git(msg) => write!(f, "bump error: git >> {msg}"),
         }
     }
 }
 
 impl From<io::Error> for BumpError {
     fn from(err: io::Error) -> Self {
-        BumpError::IoError(err)
+        Self::IoError(err)
     }
 }
 
 impl From<toml::de::Error> for BumpError {
     fn from(err: toml::de::Error) -> Self {
-        BumpError::TomlError(err)
+        Self::TomlError(err)
     }
 }
 
@@ -120,7 +120,7 @@ pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
     } else if matches.get_flag("patch") {
         Ok(BumpType::Patch)
     } else if let Some(phase_value) = matches.get_one::<String>("phase") {
-        Ok(BumpType::Phase(phase_value.to_string()))
+        Ok(BumpType::Phase(phase_value.clone()))
     } else if matches.get_flag("calendar") {
         Ok(BumpType::Calendar)
     } else {
@@ -162,6 +162,27 @@ pub fn initialize(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
+pub fn meta(matches: &ArgMatches) -> Result<(), BumpError> {
+    if let Some(prefix) = matches.get_one::<String>("prefix") {
+        let bumpfile = resolve_path(matches.get_one::<String>("bumpfile").unwrap());
+        let mut version = Version::from_file(&bumpfile)?;
+        version.version.prefix.clone_from(prefix);
+        version.to_file()?;
+    }
+    if let Some(suffix) = matches.get_one::<String>("suffix") {
+        if suffix != "git_sha" && suffix != "branch" {
+            return Err(BumpError::LogicError(format!(
+                "Invalid suffix mode: '{suffix}'. Expected 'git_sha' or 'branch'."
+            )));
+        }
+        let bumpfile = resolve_path(matches.get_one::<String>("bumpfile").unwrap());
+        let mut version = Version::from_file(&bumpfile)?;
+        version.suffix.mode.clone_from(suffix);
+        version.to_file()?;
+    }
+    Ok(())
+}
+
 pub fn print(matches: &ArgMatches) -> Result<(), BumpError> {
     let print_type = get_print_type(matches);
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
@@ -175,14 +196,18 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let bump_type = get_bump_type(matches)?;
     version.bump(&bump_type)?;
     version.to_file()?;
-    println!("bumped {} to {}", version.path.display(), version.to_string(&PrintType::WithTimestamp)?);
+    println!(
+        "bumped {} to {}",
+        version.path.display(),
+        version.to_string(&PrintType::WithTimestamp)?
+    );
     Ok(())
 }
 
 pub fn run_git(command: &str) -> Result<String, BumpError> {
     let args: Vec<&str> = command.split_whitespace().collect();
     let mut cmd = ProcessCommand::new("git");
-    
+
     #[cfg(test)]
     {
         // Check if test has set a specific repo path
@@ -192,15 +217,16 @@ pub fn run_git(command: &str) -> Result<String, BumpError> {
             }
         });
     }
-    
+
     let output = cmd
         .args(&args)
         .output()
-        .map_err(|e| BumpError::Git(format!("git {}: {e}", command)))?;
+        .map_err(|e| BumpError::Git(format!("git {command}: {e}")))?;
     if !output.status.success() {
-        return Err(BumpError::Git(
-            format!("git {}: {}", command, String::from_utf8_lossy(&output.stderr)),
-        ));
+        return Err(BumpError::Git(format!(
+            "git {command}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !stdout.is_empty() {
@@ -211,7 +237,7 @@ pub fn run_git(command: &str) -> Result<String, BumpError> {
 
 pub fn is_git_repository() -> bool {
     let mut cmd = ProcessCommand::new("git");
-    
+
     #[cfg(test)]
     {
         // Check if test has set a specific repo path
@@ -221,20 +247,12 @@ pub fn is_git_repository() -> bool {
             }
         });
     }
-    
+
     cmd.args(["rev-parse", "--git-dir"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
-
-// pub fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
-//     if last_tag {
-//         run_git("describe --tags --abbrev=0")
-//     } else {
-//         run_git("describe --exact-match --tags HEAD")
-//     }
-// }
 
 pub fn get_git_commit_sha() -> Result<String, BumpError> {
     run_git("rev-parse --short HEAD")
@@ -244,7 +262,7 @@ pub fn get_git_branch() -> Result<String, BumpError> {
     run_git("rev-parse --abbrev-ref HEAD")
 }
 
-pub fn generate(matches: &ArgMatches, lang: &Language) -> Result<(), BumpError> {
+pub fn generate(matches: &ArgMatches, lang: Language) -> Result<(), BumpError> {
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
     let version = Version::from_file(&resolve_path(bumpfile))?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
@@ -274,7 +292,12 @@ fn git_tag_exists(tag_name: &str) -> Result<bool, BumpError> {
     }
 
     let output = cmd
-        .args(["rev-parse", "-q", "--verify", &format!("refs/tags/{}", tag_name)])
+        .args([
+            "rev-parse",
+            "-q",
+            "--verify",
+            &format!("refs/tags/{tag_name}"),
+        ])
         .output()
         .map_err(|e| BumpError::Git(format!("failed to check if tag exists: {e}")))?;
 
@@ -299,7 +322,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         cmd.args(["-m", msg]);
     } else {
         // Default conventional commit message
-        let default_message = format!("chore(release): bump version to {}", tag_name);
+        let default_message = format!("chore(release): bump version to {tag_name}");
         cmd.args(["-m", &default_message]);
     }
 
@@ -309,8 +332,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
 
     if !output.status.success() {
         return Err(BumpError::Git(format!(
-            "failed to create tag '{}': {}",
-            tag_name,
+            "failed to create tag '{tag_name}': {}",
             String::from_utf8_lossy(&output.stderr)
         )));
     }
@@ -324,5 +346,5 @@ pub fn tag_version(matches: &ArgMatches) -> Result<(), BumpError> {
     let version = Version::from_file(&resolve_path(bumpfile))?;
     let message = matches.get_one::<String>("message");
 
-    create_git_tag(&version, message.map(|s| s.as_str()))
+    create_git_tag(&version, message.map(String::as_str))
 }

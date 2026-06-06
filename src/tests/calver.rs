@@ -9,7 +9,7 @@ fn calendar_bump_updates_date_fields_for_calver() {
     version.bump(&BumpType::Calendar).unwrap();
 
     assert_eq!(version.version.mode, "calver");
-    assert_eq!(version.version.major, before.year() as u32);
+    assert_eq!(version.version.major, before.year().cast_unsigned());
     assert_eq!(version.version.minor, Some(before.month()));
     assert_eq!(version.version.patch, Some(before.day()));
 }
@@ -38,15 +38,15 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
         },
         version: VersionTable {
             mode: "calver".to_string(),
-            prefix: "".to_string(),
+            prefix: String::new(),
             delimiter: ".".to_string(),
-            major: now.year() as u32,
+            major: now.year().cast_unsigned(),
             minor: Some(now.month()),
             patch: Some(now.day()),
         },
         phase: PhaseTable {
             prefix: "-".to_string(),
-            name: "".to_string(),
+            name: String::new(),
             delimiter: "-".to_string(),
             distance: 4,
         },
@@ -96,9 +96,15 @@ delimiter = "+"
     let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
     let table = parsed.get("version").unwrap().as_table().unwrap();
 
-    assert_eq!(table.get("year").and_then(|v| v.as_integer()), Some(2026));
-    assert_eq!(table.get("month").and_then(|v| v.as_integer()), Some(6));
-    assert_eq!(table.get("day").and_then(|v| v.as_integer()), Some(5));
+    assert_eq!(
+        table.get("year").and_then(toml::Value::as_integer),
+        Some(2026)
+    );
+    assert_eq!(
+        table.get("month").and_then(toml::Value::as_integer),
+        Some(6)
+    );
+    assert_eq!(table.get("day").and_then(toml::Value::as_integer), Some(5));
     assert!(!table.contains_key("major"));
     assert!(!table.contains_key("minor"));
     assert!(!table.contains_key("patch"));

@@ -3,11 +3,11 @@ name = "bump"
 version = "7.0.0"
 edition = "2024"
 authors = ["Tony B"]
-description = "Un-opinionated automatic versioning"
+description = "Automatic un-opinionated version bumping"
 license = "MIT"
 repository = "https://github.com/launchfirestorm/bump"
 readme = "README.md"
-keywords = ["cli", "versioning", "semver", "version"]
+keywords = ["cli", "versioning", "semver", "calver"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
