@@ -1,5 +1,5 @@
-use crate::version::Version;
 use crate::bump::{BumpError, PrintType};
+use crate::version::Version;
 use std::fs;
 use std::path::Path;
 
@@ -33,7 +33,6 @@ impl Language {
             Language::Python => "Python source file",
         }
     }
-
 }
 
 fn write_output(lang: Language, path: &Path, content: String) -> Result<(), BumpError> {
@@ -42,10 +41,7 @@ fn write_output(lang: Language, path: &Path, content: String) -> Result<(), Bump
     Ok(())
 }
 
-fn c_output(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+fn c_output(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = match version.version.mode.as_str() {
         "calver" => {
             format!(
@@ -114,10 +110,7 @@ fn c_output(
     write_output(Language::C, path, content)
 }
 
-fn go_output(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+fn go_output(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = match version.version.mode.as_str() {
         "calver" => {
             format!(
@@ -182,10 +175,7 @@ const (
     write_output(Language::Go, path, content)
 }
 
-fn java_output(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+fn java_output(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = match version.version.mode.as_str() {
         "calver" => {
             format!(
@@ -250,10 +240,7 @@ public class Version {{
     write_output(Language::Java, path, content)
 }
 
-fn csharp_output(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+fn csharp_output(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = match version.version.mode.as_str() {
         "calver" => {
             format!(
@@ -318,10 +305,7 @@ public static class Version {{
     write_output(Language::CSharp, path, content)
 }
 
-fn python_output(
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+fn python_output(version: &Version, path: &Path) -> Result<(), BumpError> {
     let content = match version.version.mode.as_str() {
         "calver" => {
             format!(
@@ -380,12 +364,7 @@ VERSION_TIMESTAMP = "{}"
     write_output(Language::Python, path, content)
 }
 
-
-pub fn output_file(
-    lang: &Language,
-    version: &Version,
-    path: &Path,
-) -> Result<(), BumpError> {
+pub fn output_file(lang: &Language, version: &Version, path: &Path) -> Result<(), BumpError> {
     match lang {
         Language::C => c_output(version, path),
         Language::Go => go_output(version, path),

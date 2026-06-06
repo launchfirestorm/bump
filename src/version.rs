@@ -1,13 +1,11 @@
 use crate::bump::{
-    BumpError, 
-    BumpType, 
-    PrintType, 
-    get_git_branch, get_git_commit_sha, is_git_repository,
+    BumpError, BumpType, PrintType, get_git_branch, get_git_commit_sha, is_git_repository,
 };
-use chrono::{Datelike};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs, io, path::{Path, PathBuf}
+    fs, io,
+    path::{Path, PathBuf},
 };
 use toml_edit::{DocumentMut, value};
 
@@ -93,7 +91,8 @@ impl Version {
         let strftime = "%Y-%m-%d %H:%M:%S %Z";
         let now = chrono::Utc::now();
         let current_timestamp = now.format(strftime).to_string();
-        let content = format!(r#"#  ____  __  __  __  __  ____ 
+        let content = format!(
+            r#"#  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
 #  ) _ < )(__)(  )    (  )___/
 # (____/(______)(_/\/\_)(__)
@@ -105,9 +104,8 @@ format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
 last = "{}"
 
 # NOTE: some fields are modified by bump
-#   - minor is optional and can be removed if not needed
-#   - patch is optional and can be removed if not needed
-# or "calver"
+#   - mode: "semver" or "calver"
+#   - minor|patch: optional, can be removed if not needed
 [version]
 mode = "semver"
 prefix = "v"
@@ -128,10 +126,11 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-        "#, current_timestamp);
+        "#,
+            current_timestamp
+        );
         fs::write(&self.path, content).map_err(BumpError::IoError)
     }
-
 
     fn warn_mode_key_mismatch(path: &Path, content: &str) {
         let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
@@ -142,11 +141,15 @@ delimiter = "+"
             return;
         };
 
-        let mode = version.get("mode").and_then(|v| v.as_str()).unwrap_or("semver");
+        let mode = version
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("semver");
 
         if mode == "semver" {
-            let has_calver_keys =
-                version.contains_key("year") || version.contains_key("month") || version.contains_key("day");
+            let has_calver_keys = version.contains_key("year")
+                || version.contains_key("month")
+                || version.contains_key("day");
 
             if has_calver_keys {
                 println!(
@@ -177,11 +180,19 @@ delimiter = "+"
                 let mut version: Version = v;
                 version.path = path.to_path_buf();
                 version
-            },
+            }
             Err(err) => {
-                if ".version" == content.lines().find(|line| line.trim() == ".version").unwrap_or("") {
+                if ".version"
+                    == content
+                        .lines()
+                        .find(|line| line.trim() == ".version")
+                        .unwrap_or("")
+                {
                     return Err(BumpError::ParseError(format!(
-                        "Failed to parse file '{}': {}. Detected old format with [*.version] table. Please update to the new format with [version.type] field. See https://github.com/launchfirestorm/bump",
+                        "Failed to parse file '{}': {}. \
+                        \nDetected old format with [*.version] table. \
+                        \nPlease update [version.mode] to 'semver' or 'calver'. \
+                        \nSee https://github.com/launchfirestorm/bump",
                         path.display(),
                         err
                     )));
@@ -195,7 +206,7 @@ delimiter = "+"
         };
 
         match version_parsed.version.mode.as_str() {
-            "semver"|"calver" => (),
+            "semver" | "calver" => (),
             _ => {
                 return Err(BumpError::ParseError(format!(
                     "Invalid version type '{}' in '{}'. Expected 'semver' or 'calver'.",
@@ -206,7 +217,7 @@ delimiter = "+"
         }
 
         match version_parsed.suffix.mode.as_str() {
-            "git_sha"|"branch" => (),
+            "git_sha" | "branch" => (),
             _ => {
                 return Err(BumpError::ParseError(format!(
                     "Invalid suffix type '{}' in '{}'. Expected 'git_sha' or 'branch'.",
@@ -292,16 +303,8 @@ delimiter = "+"
                 self.get_base(),
                 self.get_phase()
             )),
-            PrintType::NoPrefix => Ok(format!(
-                "{}{}",
-                self.get_base(),
-                self.get_phase()
-            )),
-            PrintType::NoPhase => Ok(format!(
-                "{}{}",
-                self.version.prefix,
-                self.get_base()
-            )),
+            PrintType::NoPrefix => Ok(format!("{}{}", self.get_base(), self.get_phase())),
+            PrintType::NoPhase => Ok(format!("{}{}", self.version.prefix, self.get_base())),
             PrintType::WithSuffix => Ok(format!(
                 "{}{}{}{}",
                 self.version.prefix,
@@ -333,21 +336,37 @@ delimiter = "+"
                 "{}{}{}{}{}",
                 self.version.major,
                 self.version.delimiter,
-                if self.version.mode == "calver" { format!("{:02}", minor) } else { minor.to_string() },
+                if self.version.mode == "calver" {
+                    format!("{:02}", minor)
+                } else {
+                    minor.to_string()
+                },
                 self.version.delimiter,
-                if self.version.mode == "calver" { format!("{:02}", patch) } else { patch.to_string() },
+                if self.version.mode == "calver" {
+                    format!("{:02}", patch)
+                } else {
+                    patch.to_string()
+                },
             ),
             (Some(minor), None) => format!(
-                "{}{}{}", 
-                self.version.major, 
-                self.version.delimiter, 
-                if self.version.mode == "calver" { format!("{:02}", minor) } else { minor.to_string() },
+                "{}{}{}",
+                self.version.major,
+                self.version.delimiter,
+                if self.version.mode == "calver" {
+                    format!("{:02}", minor)
+                } else {
+                    minor.to_string()
+                },
             ),
             (None, Some(patch)) => format!(
-                "{}{}{}", 
-                self.version.major, 
-                self.version.delimiter, 
-                if self.version.mode == "calver" { format!("{:02}", patch) } else { patch.to_string() },
+                "{}{}{}",
+                self.version.major,
+                self.version.delimiter,
+                if self.version.mode == "calver" {
+                    format!("{:02}", patch)
+                } else {
+                    patch.to_string()
+                },
             ),
             _ => self.version.major.to_string(),
         }
@@ -360,18 +379,11 @@ delimiter = "+"
         } else if self.phase.name.is_empty() && self.phase.distance > 0 {
             format!("{}{}", self.phase.prefix, self.phase.distance)
         } else if self.phase.distance == 0 {
-            format!(
-                "{}{}",
-                self.phase.prefix,
-                self.phase.name,
-            )
+            format!("{}{}", self.phase.prefix, self.phase.name,)
         } else {
             format!(
                 "{}{}{}{}",
-                self.phase.prefix,
-                self.phase.name,
-                self.phase.delimiter,
-                self.phase.distance
+                self.phase.prefix, self.phase.name, self.phase.delimiter, self.phase.distance
             )
         }
     }
@@ -410,28 +422,44 @@ delimiter = "+"
             BumpType::Major => {
                 self.right_mode("semver")?;
                 self.version.major += 1;
-                self.version.minor = if self.version.minor.is_some() { Some(0) } else { None };
-                self.version.patch = if self.version.patch.is_some() { Some(0) } else { None };
+                self.version.minor = if self.version.minor.is_some() {
+                    Some(0)
+                } else {
+                    None
+                };
+                self.version.patch = if self.version.patch.is_some() {
+                    Some(0)
+                } else {
+                    None
+                };
                 self.phase.name = "".to_string();
                 self.phase.distance = 0;
             }
             BumpType::Minor => {
                 self.right_mode("semver")?;
                 self.version.minor = Some(self.version.minor.unwrap_or(0) + 1);
-                self.version.patch = if self.version.patch.is_some() { Some(0) } else { None };
+                self.version.patch = if self.version.patch.is_some() {
+                    Some(0)
+                } else {
+                    None
+                };
                 self.phase.name = "".to_string();
                 self.phase.distance = 0;
             }
             BumpType::Patch => {
                 self.right_mode("semver")?;
-                self.version.patch = if self.version.patch.is_some() { Some(self.version.patch.unwrap_or(0) + 1) } else { None };
+                self.version.patch = if self.version.patch.is_some() {
+                    Some(self.version.patch.unwrap_or(0) + 1)
+                } else {
+                    None
+                };
                 self.phase.name = "".to_string();
                 self.phase.distance = 0;
             }
             BumpType::Phase(cli_phase_name) => {
                 // BOTH modes have phases
                 if cli_phase_name == &self.phase.name {
-                    // same phase, just increment distance 
+                    // same phase, just increment distance
                     self.phase.distance += 1;
                 } else if *cli_phase_name != "__increment__" {
                     // different phase, switch to it and set distance to 1
@@ -444,9 +472,10 @@ delimiter = "+"
             }
             BumpType::Calendar => {
                 self.right_mode("calver")?;
-                if now.year() as u32 == self.version.major &&
-                   now.month() == self.version.minor.unwrap_or(0) &&
-                   now.day() == self.version.patch.unwrap_or(0) {
+                if now.year() as u32 == self.version.major
+                    && now.month() == self.version.minor.unwrap_or(0)
+                    && now.day() == self.version.patch.unwrap_or(0)
+                {
                     // If the date hasn't changed, just increment the phase distance (if any)
                     self.phase.distance += 1;
                 }

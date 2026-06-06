@@ -5,9 +5,9 @@ use std::process::ExitCode;
 mod bump;
 mod cli;
 mod lang;
-mod update;
 #[cfg(test)]
 mod tests;
+mod update;
 mod version;
 
 fn egress(result: Result<(), BumpError>) -> ExitCode {
@@ -39,6 +39,16 @@ fn main() -> ExitCode {
         Some(("tag", sub_matches)) => egress(bump::tag_version(sub_matches)),
         Some(("update", sub_matches)) => egress(update::modify_file(sub_matches)),
         Some(("print", sub_matches)) => egress(bump::print(sub_matches)),
-        _ => egress(bump::apply(&matches))
+        _ => {
+            if matches.contains_id("meta") {
+                egress(bump::meta(&matches))
+            } else if matches.contains_id("formal") {
+                egress(bump::apply(&matches))
+            } else {
+                egress(Err(BumpError::LogicError(
+                    "No valid command specified".to_string()
+                )))
+            }
+        }
     }
 }

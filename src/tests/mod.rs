@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
-pub use crate::bump::{create_git_tag, BumpError, BumpType, PrintType};
+pub use crate::bump::{BumpError, BumpType, PrintType, create_git_tag};
 pub use crate::version::{PhaseTable, SuffixTable, TimestampTable, Version, VersionTable};
 
 pub struct TestRepo {
@@ -187,7 +187,11 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
         },
         phase: PhaseTable {
             prefix: "-".to_string(),
-            name: if candidate > 0 { "rc".to_string() } else { "".to_string() },
+            name: if candidate > 0 {
+                "rc".to_string()
+            } else {
+                "".to_string()
+            },
             delimiter: "-".to_string(),
             distance: candidate,
         },
@@ -236,5 +240,6 @@ pub fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
     output
 }
 
-mod semver;
 mod calver;
+mod meta;
+mod semver;

@@ -3,7 +3,7 @@ use clap::{Arg, Command};
 pub fn cli() -> Command {
     Command::new("bump")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Automatic version bumping with sane defaults")
+        .about("Automatic un-opinionated version bumping")
         .arg(
             Arg::new("bumpfile")
                 .value_name("BUMPFILE")
@@ -131,16 +131,16 @@ pub fn cli() -> Command {
                 .value_parser(clap::value_parser!(String))
                 .num_args(1)
                 .group("meta")
-                .help("Prefix for version tags (e.g., 'v', 'release-', or empty string)")
+                .help("Set prefix string (i.e: 'v', 'release-')")
         )
         .arg(
             Arg::new("suffix")
                 .long("suffix")
-                .value_name("SUFFIX")
+                .value_name("MODE")
                 .value_parser(clap::value_parser!(String))
                 .num_args(1)
                 .group("meta")
-                .help("Suffix for version tags (e.g., '-beta', '-SNAPSHOT', or empty string)")
+                .help("Set suffix mode 'git_sha' or 'branch'")
         )
         .arg(
             Arg::new("major")
@@ -148,7 +148,7 @@ pub fn cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .group("formal")
                 .conflicts_with_all(["meta"])
-                .help("Bump the major version"),
+                .help("Increment major version"),
         )
         .arg(
             Arg::new("minor")
@@ -156,7 +156,7 @@ pub fn cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .group("formal")
                 .conflicts_with_all(["meta"])
-                .help("Bump the minor version"),
+                .help("Increment minor version"),
         )
         .arg(
             Arg::new("patch")
@@ -164,7 +164,7 @@ pub fn cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .group("formal")
                 .conflicts_with_all(["meta"])
-                .help("Bump the patch version"),
+                .help("Increment patch version"),
         )
         .arg(
             Arg::new("phase")
@@ -176,13 +176,13 @@ pub fn cli() -> Command {
                 .allow_hyphen_values(true)
                 .group("formal")
                 .conflicts_with_all(["meta"])
-                .help("If specified, sets the phase and resets distance. If used without a value, increments the distance."),
+                .help("Increment phase, if PHASE provided sets the phase name and resets distance.")
         )
         .arg(
             Arg::new("calendar")
                 .long("calendar")
                 .action(clap::ArgAction::SetTrue)
-                .help("update version based on current calendar date")
+                .help("Update version based on current calendar date")
                 .group("formal")
                 .conflicts_with_all(["meta"])
         )

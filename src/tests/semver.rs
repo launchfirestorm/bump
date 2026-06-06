@@ -164,7 +164,10 @@ fn to_string_regular_uses_prefix_base_and_phase() {
     version.phase.prefix = "-".to_string();
     version.phase.delimiter = "-".to_string();
 
-    assert_eq!(version.to_string(&PrintType::Regular).unwrap(), "v1.2.3-rc-2");
+    assert_eq!(
+        version.to_string(&PrintType::Regular).unwrap(),
+        "v1.2.3-rc-2"
+    );
 }
 
 #[test]
@@ -226,7 +229,9 @@ fn bump_patch_increments_patch_and_clears_phase() {
 fn bump_phase_increment_mode_increments_distance() {
     let mut version = make_semver("v", 1, 2, 3, 1);
 
-    version.bump(&BumpType::Phase("__increment__".to_string())).unwrap();
+    version
+        .bump(&BumpType::Phase("__increment__".to_string()))
+        .unwrap();
 
     assert_eq!(version.phase.name, "rc");
     assert_eq!(version.phase.distance, 2);

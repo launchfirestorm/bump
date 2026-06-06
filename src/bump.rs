@@ -1,5 +1,5 @@
 use crate::lang::{self, Language};
-use crate::version::{Version};
+use crate::version::Version;
 use clap::ArgMatches;
 use std::{
     fmt, fs, io,
@@ -26,7 +26,7 @@ pub enum BumpType {
     Major,
     Minor,
     Patch,
-    Phase(String),      // increment phase distance
+    Phase(String), // increment phase distance
     Calendar,
 }
 
@@ -162,6 +162,27 @@ pub fn initialize(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
+pub fn meta(matches: &ArgMatches) -> Result<(), BumpError> {
+    if let Some(prefix) = matches.get_one::<String>("prefix") {
+        let bumpfile = resolve_path(matches.get_one::<String>("bumpfile").unwrap());
+        let mut version = Version::from_file(&bumpfile)?;
+        version.version.prefix = prefix.to_string();
+        version.to_file()?;
+    }
+    if let Some(suffix) = matches.get_one::<String>("suffix") {
+        if suffix != "git_sha" && suffix != "branch" {
+            return Err(BumpError::LogicError(format!(
+                "Invalid suffix mode: '{suffix}'. Expected 'git_sha' or 'branch'."
+            )));
+        }
+        let bumpfile = resolve_path(matches.get_one::<String>("bumpfile").unwrap());
+        let mut version = Version::from_file(&bumpfile)?;
+        version.suffix.mode = suffix.to_string();
+        version.to_file()?;
+    }
+    Ok(())
+}
+
 pub fn print(matches: &ArgMatches) -> Result<(), BumpError> {
     let print_type = get_print_type(matches);
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
@@ -175,14 +196,18 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let bump_type = get_bump_type(matches)?;
     version.bump(&bump_type)?;
     version.to_file()?;
-    println!("bumped {} to {}", version.path.display(), version.to_string(&PrintType::WithTimestamp)?);
+    println!(
+        "bumped {} to {}",
+        version.path.display(),
+        version.to_string(&PrintType::WithTimestamp)?
+    );
     Ok(())
 }
 
 pub fn run_git(command: &str) -> Result<String, BumpError> {
     let args: Vec<&str> = command.split_whitespace().collect();
     let mut cmd = ProcessCommand::new("git");
-    
+
     #[cfg(test)]
     {
         // Check if test has set a specific repo path
@@ -192,15 +217,17 @@ pub fn run_git(command: &str) -> Result<String, BumpError> {
             }
         });
     }
-    
+
     let output = cmd
         .args(&args)
         .output()
         .map_err(|e| BumpError::Git(format!("git {}: {e}", command)))?;
     if !output.status.success() {
-        return Err(BumpError::Git(
-            format!("git {}: {}", command, String::from_utf8_lossy(&output.stderr)),
-        ));
+        return Err(BumpError::Git(format!(
+            "git {}: {}",
+            command,
+            String::from_utf8_lossy(&output.stderr)
+        )));
     }
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !stdout.is_empty() {
@@ -211,7 +238,7 @@ pub fn run_git(command: &str) -> Result<String, BumpError> {
 
 pub fn is_git_repository() -> bool {
     let mut cmd = ProcessCommand::new("git");
-    
+
     #[cfg(test)]
     {
         // Check if test has set a specific repo path
@@ -221,20 +248,12 @@ pub fn is_git_repository() -> bool {
             }
         });
     }
-    
+
     cmd.args(["rev-parse", "--git-dir"])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
-
-// pub fn get_git_tag(last_tag: bool) -> Result<String, BumpError> {
-//     if last_tag {
-//         run_git("describe --tags --abbrev=0")
-//     } else {
-//         run_git("describe --exact-match --tags HEAD")
-//     }
-// }
 
 pub fn get_git_commit_sha() -> Result<String, BumpError> {
     run_git("rev-parse --short HEAD")
@@ -274,7 +293,12 @@ fn git_tag_exists(tag_name: &str) -> Result<bool, BumpError> {
     }
 
     let output = cmd
-        .args(["rev-parse", "-q", "--verify", &format!("refs/tags/{}", tag_name)])
+        .args([
+            "rev-parse",
+            "-q",
+            "--verify",
+            &format!("refs/tags/{}", tag_name),
+        ])
         .output()
         .map_err(|e| BumpError::Git(format!("failed to check if tag exists: {e}")))?;
 
