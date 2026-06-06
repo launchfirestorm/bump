@@ -37,9 +37,7 @@ fn main() -> ExitCode {
         Some(("update", sub_matches)) => egress(update::modify_file(sub_matches)),
         Some(("print", sub_matches)) => egress(bump::print(sub_matches)),
         _ => {
-            if matches.contains_id("meta") {
-                egress(bump::meta(&matches))
-            } else if matches.contains_id("formal") {
+            if bump::has_meta_flags(&matches) || matches.contains_id("formal") {
                 egress(bump::apply(&matches))
             } else {
                 egress(Err(BumpError::LogicError(

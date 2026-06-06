@@ -132,33 +132,37 @@ delimiter = "+"
         fs::write(&self.path, content).map_err(BumpError::IoError)
     }
 
-    fn warn_mode_key_mismatch(path: &Path, content: &str) {
-        let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
-            return;
-        };
+    fn warn_mode_key_mismatch(path: &Path, content: &str) -> Result<(), BumpError> {
+        let doc = content
+            .parse::<DocumentMut>()
+            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
 
-        let Some(version) = doc["version"].as_table() else {
-            return;
-        };
+        let version = doc["version"].as_table().ok_or_else(|| {
+            BumpError::ParseError(format!(
+                "'version' table not found in {}, bump v7 has changed the format. \
+                \nDownload bump v7 from https://github.com/launchfirestorm/bump \
+                \nand recreate your bumpfile with the proper format with 'bump init'.",
+                path.display()
+            ))
+        })?;
 
         let mode = version
             .get("mode")
             .and_then(|v| v.as_str())
             .unwrap_or("semver");
+        let has_calver_keys = ["year", "month", "day"]
+            .iter()
+            .any(|key| version.contains_key(key));
 
-        if mode == "semver" {
-            let has_calver_keys = version.contains_key("year")
-                || version.contains_key("month")
-                || version.contains_key("day");
-
-            if has_calver_keys {
-                println!(
-                    "bump warning: [version].mode is semver, but found calver keys (year/month/day) in {}. \
-                    \nThey will be treated as major/minor/patch and rewritten on save.",
-                    path.display()
-                );
-            }
+        if mode == "semver" && has_calver_keys {
+            println!(
+                "bump warning: [version].mode is semver, but found calver keys (year/month/day) in {}. \
+                \nThey will be treated as major/minor/patch and rewritten on save.",
+                path.display()
+            );
         }
+
+        Ok(())
     }
 
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
@@ -173,7 +177,7 @@ delimiter = "+"
             }
         })?;
 
-        Self::warn_mode_key_mismatch(path, &content);
+        Self::warn_mode_key_mismatch(path, &content)?;
 
         let version_parsed: Self = match toml::from_str(&content) {
             Ok(v) => {
@@ -292,41 +296,30 @@ delimiter = "+"
         fs::write(self.path.as_path(), doc.to_string()).map_err(BumpError::IoError)
     }
 
+    #[rustfmt::skip]
     pub fn to_string(&self, print_type: &PrintType) -> Result<String, BumpError> {
+        let prefix = &self.version.prefix;
+        let base = self.get_base();
+        let phase = self.get_phase();
+
         match print_type {
-            PrintType::OnlyPrefix => Ok(self.version.prefix.clone()),
-            PrintType::OnlyPhase => Ok(self.phase.name.clone()),
-            PrintType::OnlyBase => Ok(self.get_base()),
-            PrintType::Regular => Ok(format!(
-                "{}{}{}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase()
-            )),
-            PrintType::NoPrefix => Ok(format!("{}{}", self.get_base(), self.get_phase())),
-            PrintType::NoPhase => Ok(format!("{}{}", self.version.prefix, self.get_base())),
-            PrintType::WithSuffix => Ok(format!(
-                "{}{}{}{}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase(),
-                self.get_suffix()?
-            )),
-            PrintType::WithTimestamp => Ok(format!(
-                "{}{}{}  {}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase(),
-                self.timestamp.last
-            )),
-            PrintType::Full => Ok(format!(
-                "{}{}{}{}  {}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase(),
-                self.get_suffix()?,
-                self.timestamp.last
-            )),
+            PrintType::OnlyPrefix =>    Ok(prefix.clone()),
+            PrintType::OnlyPhase =>     Ok(self.phase.name.clone()),
+            PrintType::OnlyBase =>      Ok(base),
+            PrintType::Regular =>       Ok(format!("{}{}{}", prefix, base, phase)),
+            PrintType::NoPrefix =>      Ok(format!("{}{}", base, phase)),
+            PrintType::NoPhase =>       Ok(format!("{}{}", prefix, base)),
+            PrintType::WithSuffix =>    Ok(format!("{}{}{}{}", prefix, base, phase, self.get_suffix()?)),
+            PrintType::WithTimestamp => Ok(format!("{}{}{}  {}", prefix, base, phase, self.timestamp.last)),
+            PrintType::Full =>          Ok(format!("{}{}{}{}  {}", prefix, base, phase, self.get_suffix()?, self.timestamp.last)),
+        }
+    }
+
+    fn format_component(&self, n: u32) -> String {
+        if self.version.mode == "calver" {
+            format!("{n:02}")
+        } else {
+            n.to_string()
         }
     }
 
@@ -336,37 +329,21 @@ delimiter = "+"
                 "{}{}{}{}{}",
                 self.version.major,
                 self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{minor:02}")
-                } else {
-                    minor.to_string()
-                },
+                self.format_component(minor),
                 self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{patch:02}")
-                } else {
-                    patch.to_string()
-                },
+                self.format_component(patch),
             ),
             (Some(minor), None) => format!(
                 "{}{}{}",
                 self.version.major,
                 self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{minor:02}")
-                } else {
-                    minor.to_string()
-                },
+                self.format_component(minor),
             ),
             (None, Some(patch)) => format!(
                 "{}{}{}",
                 self.version.major,
                 self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{patch:02}")
-                } else {
-                    patch.to_string()
-                },
+                self.format_component(patch),
             ),
             _ => self.version.major.to_string(),
         }
@@ -421,37 +398,21 @@ delimiter = "+"
             BumpType::Major => {
                 self.right_mode("semver")?;
                 self.version.major += 1;
-                self.version.minor = if self.version.minor.is_some() {
-                    Some(0)
-                } else {
-                    None
-                };
-                self.version.patch = if self.version.patch.is_some() {
-                    Some(0)
-                } else {
-                    None
-                };
+                self.version.minor = self.version.minor.map(|_| 0);
+                self.version.patch = self.version.patch.map(|_| 0);
                 self.phase.name = String::new();
                 self.phase.distance = 0;
             }
             BumpType::Minor => {
                 self.right_mode("semver")?;
-                self.version.minor = Some(self.version.minor.unwrap_or(0) + 1);
-                self.version.patch = if self.version.patch.is_some() {
-                    Some(0)
-                } else {
-                    None
-                };
+                self.version.minor = self.version.minor.map(|m| m + 1);
+                self.version.patch = self.version.patch.map(|_| 0);
                 self.phase.name = String::new();
                 self.phase.distance = 0;
             }
             BumpType::Patch => {
                 self.right_mode("semver")?;
-                self.version.patch = if self.version.patch.is_some() {
-                    Some(self.version.patch.unwrap_or(0) + 1)
-                } else {
-                    None
-                };
+                self.version.patch = self.version.patch.map(|p| p + 1);
                 self.phase.name = String::new();
                 self.phase.distance = 0;
             }
@@ -477,13 +438,10 @@ delimiter = "+"
                 {
                     // If the date hasn't changed, just increment the phase distance (if any)
                     self.phase.distance += 1;
-                }
-                self.version.major = now.year().cast_unsigned();
-                if self.version.minor.is_some() {
-                    self.version.minor = Some(now.month());
-                }
-                if self.version.patch.is_some() {
-                    self.version.patch = Some(now.day());
+                } else {
+                    self.version.major = now.year().cast_unsigned();
+                    self.version.minor = self.version.minor.map(|_| now.month());
+                    self.version.patch = self.version.patch.map(|_| now.day());
                 }
             }
         }

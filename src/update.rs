@@ -5,7 +5,33 @@ use crate::{
 use clap::ArgMatches;
 use std::fs;
 use std::path::Path;
-use toml_edit::DocumentMut;
+use toml_edit::{DocumentMut, value};
+
+fn load_toml(path: &Path) -> Result<DocumentMut, BumpError> {
+    let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
+    content
+        .parse::<DocumentMut>()
+        .map_err(|e| BumpError::ParseError(format!("failed to parse {}: {}", path.display(), e)))
+}
+
+fn save_toml(path: &Path, doc: &DocumentMut) -> Result<(), BumpError> {
+    fs::write(path, doc.to_string()).map_err(BumpError::IoError)
+}
+
+fn set_toml_field(
+    doc: &mut DocumentMut,
+    section: &str,
+    key: &str,
+    value_str: &str,
+) -> Result<(), BumpError> {
+    let Some(table) = doc.get_mut(section) else {
+        return Err(BumpError::ParseError(format!(
+            "no [{section}] section found"
+        )));
+    };
+    table[key] = value(value_str);
+    Ok(())
+}
 
 /// Update a file with the version from the bumpfile
 pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
@@ -29,36 +55,20 @@ pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
 }
 
 pub fn cargo_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
-    let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
-
-    let mut doc = content
-        .parse::<DocumentMut>()
-        .map_err(|e| BumpError::ParseError(format!("failed to parse {}: {}", path.display(), e)))?;
+    let mut doc = load_toml(path)?;
 
     // Cargo `package.version` must be semver without a leading `v` (or other prefix).
     let v_str = version.to_string(&PrintType::NoPrefix)?;
     println!("cargo doesn't like a character prefix in Cargo.toml, stripping prefix");
 
-    if let Some(package) = doc.get_mut("package") {
-        package["version"] = toml_edit::value(v_str.as_str());
-    } else {
-        return Err(BumpError::ParseError(format!(
-            "no [package] section found in {}",
-            path.display()
-        )));
-    }
-
-    fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
+    set_toml_field(&mut doc, "package", "version", &v_str)?;
+    save_toml(path, &doc)?;
     println!("Cargo.toml updated to version {v_str}");
     Ok(())
 }
 
 pub fn pyproject_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
-    let content = fs::read_to_string(path).map_err(BumpError::IoError)?;
-
-    let mut doc = content
-        .parse::<DocumentMut>()
-        .map_err(|e| BumpError::ParseError(format!("failed to parse {}: {}", path.display(), e)))?;
+    let mut doc = load_toml(path)?;
 
     // https://packaging.python.org/en/latest/version.html#public-version-identifiers
     let yellow = "\x1b[33m";
@@ -78,11 +88,10 @@ pub fn pyproject_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     );
 
     let v_str = version.to_string(&PrintType::Regular)?;
-    if let Some(project) = doc.get_mut("project") {
-        project["version"] = toml_edit::value(v_str.as_str());
+    if doc.get_mut("project").is_some() {
+        set_toml_field(&mut doc, "project", "version", &v_str)?;
+        save_toml(path, &doc)?;
+        println!("pyproject.toml updated to version {v_str}");
     }
-
-    fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
-    println!("pyproject.toml updated to version {v_str}");
     Ok(())
 }

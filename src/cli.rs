@@ -131,7 +131,6 @@ pub fn cli() -> Command {
                 .value_name("PREFIX")
                 .value_parser(clap::value_parser!(String))
                 .num_args(1)
-                .group("meta")
                 .help("Set prefix string (i.e: 'v', 'release-')")
         )
         .arg(
@@ -140,7 +139,6 @@ pub fn cli() -> Command {
                 .value_name("MODE")
                 .value_parser(clap::value_parser!(String))
                 .num_args(1)
-                .group("meta")
                 .help("Set suffix mode 'git_sha' or 'branch'")
         )
         .arg(
@@ -148,7 +146,6 @@ pub fn cli() -> Command {
                 .long("major")
                 .action(clap::ArgAction::SetTrue)
                 .group("formal")
-                .conflicts_with_all(["meta"])
                 .help("Increment major version"),
         )
         .arg(
@@ -156,7 +153,6 @@ pub fn cli() -> Command {
                 .long("minor")
                 .action(clap::ArgAction::SetTrue)
                 .group("formal")
-                .conflicts_with_all(["meta"])
                 .help("Increment minor version"),
         )
         .arg(
@@ -164,7 +160,6 @@ pub fn cli() -> Command {
                 .long("patch")
                 .action(clap::ArgAction::SetTrue)
                 .group("formal")
-                .conflicts_with_all(["meta"])
                 .help("Increment patch version"),
         )
         .arg(
@@ -176,7 +171,6 @@ pub fn cli() -> Command {
                 .default_missing_value("__increment__") // hidden from help
                 .allow_hyphen_values(true)
                 .group("formal")
-                .conflicts_with_all(["meta"])
                 .help("Increment phase, if PHASE provided sets the phase name and resets distance.")
         )
         .arg(
@@ -185,6 +179,5 @@ pub fn cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Update version based on current calendar date")
                 .group("formal")
-                .conflicts_with_all(["meta"])
         )
 }
