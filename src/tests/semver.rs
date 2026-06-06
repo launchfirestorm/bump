@@ -1,4 +1,5 @@
 use super::*;
+use crate::print::{self, PrintOptions};
 use tempfile::TempDir;
 
 #[test]
@@ -9,11 +10,11 @@ fn from_file_reads_semver_schema() {
 
     let version = Version::from_file(&bump_path).unwrap();
 
-    assert_eq!(version.version.mode, VersionMode::Semver);
-    assert_eq!(version.version.prefix, "v");
-    assert_eq!(version.version.major, 1);
-    assert_eq!(version.version.minor, Some(2));
-    assert_eq!(version.version.patch, Some(3));
+    assert_eq!(version.base.mode, VersionMode::Semver);
+    assert_eq!(version.base.prefix, "v");
+    assert_eq!(version.base.major, 1);
+    assert_eq!(version.base.minor, Some(2));
+    assert_eq!(version.base.patch, Some(3));
     assert_eq!(version.phase.name, "rc");
     assert_eq!(version.phase.distance, 4);
 }
@@ -35,7 +36,7 @@ fn from_file_rejects_invalid_version_type() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
     let content = format!(
-        r#"{timestamp}[version]
+        r#"{timestamp}[base]
 mode = "nope"
 prefix = "v"
 delimiter = "."
@@ -52,8 +53,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#,
+
+{label}"#,
         timestamp = timestamp_toml_section(),
+        label = label_toml_section(),
     );
     write_bump_toml(&bump_path, &content);
 
@@ -69,7 +72,7 @@ fn from_file_rejects_invalid_suffix_type() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
     let content = format!(
-        r#"{timestamp}[version]
+        r#"{timestamp}[base]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -86,8 +89,10 @@ distance = 0
 [suffix]
 mode = "unknown"
 delimiter = "+"
-"#,
+
+{label}"#,
         timestamp = timestamp_toml_section(),
+        label = label_toml_section(),
     );
     write_bump_toml(&bump_path, &content);
 
@@ -109,7 +114,8 @@ fn create_file_writes_template() {
     let content = std::fs::read_to_string(&bump_path).unwrap();
     let template = include_str!("../templates/bump.toml");
     assert!(content.contains("[timestamp]"));
-    assert!(content.contains("[version]"));
+    assert!(content.contains("[base]"));
+    assert!(content.contains("[label]"));
     assert!(content.contains("[phase]"));
     assert!(content.contains("[suffix]"));
     assert!(content.contains("mode = \"semver\""));
@@ -125,7 +131,7 @@ fn from_file_round_trips_version_and_suffix_modes() {
     write_test_config(&bump_path, (2, 0, 1, 0));
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.version.mode, VersionMode::Semver);
+    assert_eq!(version.base.mode, VersionMode::Semver);
     assert_eq!(version.suffix.mode, SuffixMode::GitSha);
 }
 
@@ -134,7 +140,7 @@ fn to_file_semver_remaps_year_month_day_keys() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
     let content = format!(
-        r#"{timestamp}[version]
+        r#"{timestamp}[base]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -151,8 +157,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#,
+
+{label}"#,
         timestamp = timestamp_toml_section(),
+        label = label_toml_section(),
     );
     write_bump_toml(&bump_path, &content);
 
@@ -161,7 +169,7 @@ delimiter = "+"
 
     let rewritten = std::fs::read_to_string(&bump_path).unwrap();
     let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
-    let table = parsed.get("version").unwrap().as_table().unwrap();
+    let table = parsed.get("base").unwrap().as_table().unwrap();
 
     assert_eq!(
         table.get("major").and_then(toml::Value::as_integer),
@@ -187,7 +195,7 @@ fn to_string_regular_uses_prefix_base_and_phase() {
     version.phase.delimiter = "-".to_string();
 
     assert_eq!(
-        version.to_string(&PrintType::Regular).unwrap(),
+        print::to_string(&version, &PrintType::Regular).unwrap(),
         "v1.2.3-rc-2"
     );
 }
@@ -195,7 +203,7 @@ fn to_string_regular_uses_prefix_base_and_phase() {
 #[test]
 fn to_string_no_prefix_removes_prefix() {
     let version = make_semver("v", 1, 2, 3, 0);
-    assert_eq!(version.to_string(&PrintType::NoPrefix).unwrap(), "1.2.3");
+    assert_eq!(print::to_string(&version, &PrintType::NoPrefix).unwrap(), "1.2.3");
 }
 
 #[test]
@@ -206,7 +214,14 @@ fn to_string_with_suffix_uses_git_sha_in_git_repo() {
 
     let sha = git_rev_parse_short_in(repo.path());
     assert_eq!(
-        version.to_string(&PrintType::WithSuffix).unwrap(),
+        print::format(
+            &version,
+            &PrintOptions {
+                with_suffix: true,
+                ..Default::default()
+            },
+        )
+        .unwrap(),
         format!("v1.2.3+{sha}")
     );
 }
@@ -216,7 +231,14 @@ fn to_string_with_suffix_fails_outside_git_repo() {
     let _repo = create_temp_dir();
     let version = make_semver("v", 1, 2, 3, 0);
 
-    let err = version.to_string(&PrintType::WithSuffix).unwrap_err();
+    let err = print::format(
+        &version,
+        &PrintOptions {
+            with_suffix: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_err();
     match err {
         BumpError::Git(msg) => assert!(msg.contains("Not a git repository")),
         _ => panic!("expected Git error"),
@@ -229,9 +251,9 @@ fn bump_minor_resets_patch_and_phase() {
 
     version.bump(&BumpType::Minor).unwrap();
 
-    assert_eq!(version.version.major, 1);
-    assert_eq!(version.version.minor, Some(3));
-    assert_eq!(version.version.patch, Some(0));
+    assert_eq!(version.base.major, 1);
+    assert_eq!(version.base.minor, Some(3));
+    assert_eq!(version.base.patch, Some(0));
     assert_eq!(version.phase.name, "");
     assert_eq!(version.phase.distance, 0);
 }
@@ -242,7 +264,7 @@ fn bump_patch_increments_patch_and_clears_phase() {
 
     version.bump(&BumpType::Patch).unwrap();
 
-    assert_eq!(version.version.patch, Some(4));
+    assert_eq!(version.base.patch, Some(4));
     assert_eq!(version.phase.name, "");
     assert_eq!(version.phase.distance, 0);
 }

@@ -12,7 +12,7 @@ last = "{timestamp}"
 # NOTE: some fields are modified by bump
 #   - mode: "semver" or "calver"
 #   - minor|patch: optional, can be removed if not needed
-[version]
+[base]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -32,3 +32,9 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
+
+# printed label: shown but never tracked, useful injecting dynamic values
+#  - position: "before-base", "after-base",
+#              "before-phase", "after-phase",
+[label]
+position = "before-phase"

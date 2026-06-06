@@ -122,7 +122,16 @@ pub fn cli() -> Command {
                     .long("full")
                     .action(clap::ArgAction::SetTrue)
                     .group("print-stackable")
-                    .help("Print [prefix][base][phase][suffix][timestamp]"),
+                    .help("Print full output; overrides all print flags except --with-label"),
+            )
+            .arg(
+                Arg::new("with-label")
+                    .long("with-label")
+                    .value_name("LABEL")
+                    .value_parser(clap::value_parser!(String))
+                    .num_args(1)
+                    .group("print-stackable")
+                    .help("Inject LABEL at [label].position (not persisted)"),
             )
         )
         .arg(

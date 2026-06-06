@@ -4,9 +4,10 @@ use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use tempfile::TempDir;
 
-pub use crate::bump::{BumpError, BumpType, PrintType, create_git_tag};
+pub use crate::bump::{BumpError, BumpType, create_git_tag};
+pub use crate::print::PrintType;
 pub use crate::version::{
-    PhaseTable, SuffixMode, SuffixTable, TimestampTable, Version, VersionMode, VersionTable,
+    Base, Label, LabelPosition, Phase, Suffix, SuffixMode, Timestamp, Version, VersionMode,
 };
 
 pub struct TestRepo {
@@ -142,8 +143,8 @@ pub fn test_timestamp_last() -> String {
         .to_string()
 }
 
-pub fn test_timestamp_table() -> TimestampTable {
-    TimestampTable {
+pub fn test_timestamp() -> Timestamp {
+    Timestamp {
         format: TEST_TIMESTAMP_FORMAT.to_string(),
         last: test_timestamp_last(),
     }
@@ -156,6 +157,10 @@ pub fn timestamp_toml_section() -> String {
     )
 }
 
+pub fn label_toml_section() -> String {
+    "[label]\nposition = \"before-phase\"\n\n".to_string()
+}
+
 pub fn write_bump_toml(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
@@ -163,7 +168,7 @@ pub fn write_bump_toml(path: &Path, content: &str) {
 pub fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
     let (major, minor, patch, distance) = version;
     let content = format!(
-        r#"{timestamp}[version]
+        r#"{timestamp}[base]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -180,17 +185,25 @@ distance = {distance}
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#,
+
+{label}"#,
         timestamp = timestamp_toml_section(),
+        label = label_toml_section(),
     );
     fs::write(path, content).unwrap();
+}
+
+pub fn default_label() -> Label {
+    Label {
+        position: LabelPosition::BeforePhase,
+    }
 }
 
 pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: u32) -> Version {
     Version {
         path: PathBuf::from("test.toml"),
-        timestamp: test_timestamp_table(),
-        version: VersionTable {
+        timestamp: test_timestamp(),
+        base: Base {
             mode: VersionMode::Semver,
             prefix: prefix.to_string(),
             delimiter: ".".to_string(),
@@ -198,7 +211,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             minor: Some(minor),
             patch: Some(patch),
         },
-        phase: PhaseTable {
+        phase: Phase {
             prefix: "-".to_string(),
             name: if candidate > 0 {
                 "rc".to_string()
@@ -208,18 +221,19 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             delimiter: "-".to_string(),
             distance: candidate,
         },
-        suffix: SuffixTable {
+        suffix: Suffix {
             mode: SuffixMode::GitSha,
             delimiter: "+".to_string(),
         },
+        label: default_label(),
     }
 }
 
 pub fn make_calver(prefix: &str) -> Version {
     Version {
         path: PathBuf::from("test.toml"),
-        timestamp: test_timestamp_table(),
-        version: VersionTable {
+        timestamp: test_timestamp(),
+        base: Base {
             mode: VersionMode::Calver,
             prefix: prefix.to_string(),
             delimiter: ".".to_string(),
@@ -227,16 +241,17 @@ pub fn make_calver(prefix: &str) -> Version {
             minor: Some(6),
             patch: Some(5),
         },
-        phase: PhaseTable {
+        phase: Phase {
             prefix: "-".to_string(),
             name: String::new(),
             delimiter: "-".to_string(),
             distance: 0,
         },
-        suffix: SuffixTable {
+        suffix: Suffix {
             mode: SuffixMode::GitSha,
             delimiter: "+".to_string(),
         },
+        label: default_label(),
     }
 }
 
@@ -253,4 +268,5 @@ pub fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
 mod calver;
 mod codegen;
 mod meta;
+mod print;
 mod semver;

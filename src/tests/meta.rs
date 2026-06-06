@@ -1,4 +1,5 @@
 use super::*;
+use crate::print::{self, PrintOptions};
 use crate::bump::apply;
 use crate::cli;
 
@@ -20,7 +21,7 @@ fn meta_updates_prefix_in_bumpfile() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.version.prefix, "release-");
+    assert_eq!(version.base.prefix, "release-");
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn meta_updates_prefix_to_empty_string() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.version.prefix, "");
+    assert_eq!(version.base.prefix, "");
 }
 
 #[test]
@@ -101,7 +102,7 @@ fn meta_applies_prefix_then_suffix_in_separate_invocations() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.version.prefix, "pkg-");
+    assert_eq!(version.base.prefix, "pkg-");
     assert_eq!(version.suffix.mode, SuffixMode::Branch);
 }
 
@@ -120,7 +121,7 @@ fn meta_applies_prefix_and_suffix_in_one_invocation() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.version.prefix, "pkg-");
+    assert_eq!(version.base.prefix, "pkg-");
     assert_eq!(version.suffix.mode, SuffixMode::Branch);
 }
 
@@ -139,8 +140,8 @@ fn meta_and_formal_in_one_invocation() {
     });
 
     let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.version.prefix, "rel-");
-    assert_eq!(version.version.patch, Some(4));
+    assert_eq!(version.base.prefix, "rel-");
+    assert_eq!(version.base.patch, Some(4));
     assert_eq!(version.phase.name, "");
     assert_eq!(version.phase.distance, 0);
 }
@@ -157,7 +158,7 @@ fn meta_prefix_affects_printed_version() {
 
     let version = Version::from_file(&bump_path).unwrap();
     assert_eq!(
-        version.to_string(&PrintType::Regular).unwrap(),
+        print::to_string(&version, &PrintType::Regular).unwrap(),
         "rel-2.0.1-rc"
     );
 }
@@ -169,7 +170,7 @@ fn meta_suffix_branch_appears_in_printed_version() {
     write_bump_toml(
         &bump_path,
         &format!(
-            r#"{timestamp}[version]
+            r#"{timestamp}[base]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -186,8 +187,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#,
+
+{label}"#,
             timestamp = timestamp_toml_section(),
+            label = label_toml_section(),
         ),
     );
 
@@ -198,7 +201,14 @@ delimiter = "+"
     let version = Version::from_file(&bump_path).unwrap();
     let branch = run_git_in_output(repo.path(), &["branch", "--show-current"]);
     assert_eq!(
-        version.to_string(&PrintType::WithSuffix).unwrap(),
+        print::format(
+            &version,
+            &PrintOptions {
+                with_suffix: true,
+                ..Default::default()
+            },
+        )
+        .unwrap(),
         format!("v1.0.0+{branch}")
     );
 }

@@ -1,5 +1,6 @@
 use crate::{
-    bump::{BumpError, PrintType, resolve_path},
+    bump::{BumpError, resolve_path},
+    print::{self, PrintType},
     version::Version,
 };
 use clap::ArgMatches;
@@ -58,7 +59,7 @@ pub fn cargo_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     let mut doc = load_toml(path)?;
 
     // Cargo `package.version` must be semver without a leading `v` (or other prefix).
-    let v_str = version.to_string(&PrintType::NoPrefix)?;
+    let v_str = print::to_string(version, &PrintType::NoPrefix)?;
     println!("cargo doesn't like a character prefix in Cargo.toml, stripping prefix");
 
     set_toml_field(&mut doc, "package", "version", &v_str)?;
@@ -87,7 +88,7 @@ pub fn pyproject_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
         "{yellow}  Public version identifiers MUST NOT include leading or trailing whitespace.{reset}"
     );
 
-    let v_str = version.to_string(&PrintType::Regular)?;
+    let v_str = print::to_string(version, &PrintType::Regular)?;
     if doc.get_mut("project").is_some() {
         set_toml_field(&mut doc, "project", "version", &v_str)?;
         save_toml(path, &doc)?;

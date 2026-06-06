@@ -1,4 +1,5 @@
-use crate::bump::{BumpError, PrintType};
+use crate::bump::BumpError;
+use crate::print::{self, PrintType};
 use crate::version::{Version, VersionMode};
 use std::fs;
 use std::path::Path;
@@ -62,12 +63,12 @@ struct OutputFields {
 
 fn output_fields(version: &Version) -> Result<OutputFields, BumpError> {
     Ok(OutputFields {
-        version_string: version.to_string(&PrintType::Regular)?,
+        version_string: print::to_string(version, &PrintType::Regular)?,
         timestamp: version.timestamp.last.clone(),
-        prefix: version.version.prefix.clone(),
-        major: version.version.major,
-        minor: version.version.minor.unwrap_or(0),
-        patch: version.version.patch.unwrap_or(0),
+        prefix: version.base.prefix.clone(),
+        major: version.base.major,
+        minor: version.base.minor.unwrap_or(0),
+        patch: version.base.patch.unwrap_or(0),
         phase: version.phase.name.clone(),
     })
 }
@@ -95,7 +96,7 @@ fn write_output(lang: Language, path: &Path, content: String) -> Result<(), Bump
 
 pub fn output_file(lang: Language, version: &Version, path: &Path) -> Result<(), BumpError> {
     let fields = output_fields(version)?;
-    let mode = version.version.mode;
+    let mode = version.base.mode;
     let tmpl = lang.template(mode);
     let content = match mode {
         VersionMode::Calver => render_calver(tmpl, &fields),

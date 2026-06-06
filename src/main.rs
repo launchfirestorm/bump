@@ -5,6 +5,7 @@ use std::process::ExitCode;
 mod bump;
 mod cli;
 mod lang;
+mod print;
 #[cfg(test)]
 mod tests;
 mod update;
@@ -35,7 +36,7 @@ fn main() -> ExitCode {
         }
         Some(("tag", sub_matches)) => egress(bump::tag_version(sub_matches)),
         Some(("update", sub_matches)) => egress(update::modify_file(sub_matches)),
-        Some(("print", sub_matches)) => egress(bump::print(sub_matches)),
+        Some(("print", sub_matches)) => egress(print::run(sub_matches)),
         _ => {
             if bump::has_meta_flags(&matches) || matches.contains_id("formal") {
                 egress(bump::apply(&matches))

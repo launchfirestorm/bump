@@ -1,4 +1,5 @@
 use crate::lang::{self, Language};
+use crate::print::{self, PrintType};
 use crate::version::Version;
 use clap::ArgMatches;
 use std::{
@@ -36,18 +37,6 @@ pub enum BumpError {
     ParseError(String),
     LogicError(String),
     Git(String),
-}
-
-pub enum PrintType {
-    OnlyPrefix,
-    OnlyPhase,
-    OnlyBase,
-    Regular,
-    NoPrefix,
-    NoPhase,
-    WithSuffix,
-    WithTimestamp,
-    Full, // includes prefix, phase, suffix, and timestamp
 }
 
 impl fmt::Display for BumpError {
@@ -126,28 +115,6 @@ pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
     }
 }
 
-pub fn get_print_type(matches: &ArgMatches) -> PrintType {
-    if matches.get_flag("only-prefix") {
-        PrintType::OnlyPrefix
-    } else if matches.get_flag("only-phase") {
-        PrintType::OnlyPhase
-    } else if matches.get_flag("only-base") {
-        PrintType::OnlyBase
-    } else if matches.get_flag("no-prefix") {
-        PrintType::NoPrefix
-    } else if matches.get_flag("no-phase") {
-        PrintType::NoPhase
-    } else if matches.get_flag("with-suffix") {
-        PrintType::WithSuffix
-    } else if matches.get_flag("with-timestamp") {
-        PrintType::WithTimestamp
-    } else if matches.get_flag("full") {
-        PrintType::Full
-    } else {
-        PrintType::Regular
-    }
-}
-
 pub fn initialize(matches: &ArgMatches) -> Result<(), BumpError> {
     let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
     let filepath = resolve_path(bumpfile);
@@ -158,21 +125,13 @@ pub fn initialize(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
-pub fn print(matches: &ArgMatches) -> Result<(), BumpError> {
-    let print_type = get_print_type(matches);
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
-    print!("{}", version.to_string(&print_type)?);
-    Ok(())
-}
-
 pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let mut version = get_version(matches)?;
     let has_meta = has_meta_flags(matches);
     let has_formal = matches.contains_id("formal");
 
     if let Some(prefix) = matches.get_one::<String>("prefix") {
-        version.version.prefix.clone_from(prefix);
+        version.base.prefix.clone_from(prefix);
     }
     if let Some(suffix) = matches.get_one::<String>("suffix") {
         version.suffix.mode = crate::version::SuffixMode::parse(suffix)?;
@@ -183,7 +142,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         println!(
             "bumped {} to {}",
             version.path.display(),
-            version.to_string(&PrintType::WithTimestamp)?
+            print::to_string(&version, &PrintType::WithTimestamp)?
         );
     }
 
@@ -278,7 +237,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 
-    let tag_name = version.to_string(&PrintType::Regular)?;
+    let tag_name = print::to_string(version, &PrintType::Regular)?;
 
     if git_tag_exists(&tag_name)? {
         return Err(BumpError::Git(format!("Tag '{tag_name}' already exists")));

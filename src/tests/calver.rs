@@ -8,10 +8,10 @@ fn calendar_bump_updates_date_fields_for_calver() {
 
     version.bump(&BumpType::Calendar).unwrap();
 
-    assert_eq!(version.version.mode, VersionMode::Calver);
-    assert_eq!(version.version.major, before.year().cast_unsigned());
-    assert_eq!(version.version.minor, Some(before.month()));
-    assert_eq!(version.version.patch, Some(before.day()));
+    assert_eq!(version.base.mode, VersionMode::Calver);
+    assert_eq!(version.base.major, before.year().cast_unsigned());
+    assert_eq!(version.base.minor, Some(before.month()));
+    assert_eq!(version.base.patch, Some(before.day()));
 }
 
 #[test]
@@ -32,8 +32,8 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
     let now = chrono::Utc::now();
     let mut version = Version {
         path: "test.toml".into(),
-        timestamp: test_timestamp_table(),
-        version: VersionTable {
+        timestamp: test_timestamp(),
+        base: Base {
             mode: VersionMode::Calver,
             prefix: String::new(),
             delimiter: ".".to_string(),
@@ -41,16 +41,17 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
             minor: Some(now.month()),
             patch: Some(now.day()),
         },
-        phase: PhaseTable {
+        phase: Phase {
             prefix: "-".to_string(),
             name: String::new(),
             delimiter: "-".to_string(),
             distance: 4,
         },
-        suffix: SuffixTable {
+        suffix: Suffix {
             mode: SuffixMode::GitSha,
             delimiter: "+".to_string(),
         },
+        label: default_label(),
     };
 
     version.bump(&BumpType::Calendar).unwrap();
@@ -63,7 +64,7 @@ fn to_file_calver_remaps_major_minor_patch_keys() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
     let content = format!(
-        r#"{timestamp}[version]
+        r#"{timestamp}[base]
 mode = "calver"
 prefix = ""
 delimiter = "."
@@ -80,8 +81,10 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#,
+
+{label}"#,
         timestamp = timestamp_toml_section(),
+        label = label_toml_section(),
     );
     write_bump_toml(&bump_path, &content);
 
@@ -90,7 +93,7 @@ delimiter = "+"
 
     let rewritten = std::fs::read_to_string(&bump_path).unwrap();
     let parsed: toml::Value = toml::from_str(&rewritten).unwrap();
-    let table = parsed.get("version").unwrap().as_table().unwrap();
+    let table = parsed.get("base").unwrap().as_table().unwrap();
 
     assert_eq!(
         table.get("year").and_then(toml::Value::as_integer),
