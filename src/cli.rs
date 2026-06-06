@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
 
+#[allow(clippy::too_many_lines)]
 pub fn cli() -> Command {
     Command::new("bump")
         .version(env!("CARGO_PKG_VERSION"))

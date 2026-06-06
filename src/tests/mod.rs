@@ -8,19 +8,17 @@ pub use crate::bump::{BumpError, BumpType, PrintType, create_git_tag};
 pub use crate::version::{PhaseTable, SuffixTable, TimestampTable, Version, VersionTable};
 
 pub struct TestRepo {
-    _temp_dir: TempDir,
+    temp_dir: TempDir,
 }
 
 impl TestRepo {
     pub fn new(temp_dir: TempDir) -> Self {
         crate::bump::set_test_repo_path(Some(temp_dir.path().to_path_buf()));
-        Self {
-            _temp_dir: temp_dir,
-        }
+        Self { temp_dir }
     }
 
     pub fn path(&self) -> &Path {
-        self._temp_dir.path()
+        self.temp_dir.path()
     }
 }
 
@@ -37,16 +35,16 @@ fn get_test_git_config() -> &'static Path {
     TEST_GIT_CONFIG.get_or_init(|| {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test-gitconfig");
-        let config_content = r#"[user]
+        let config_content = r"[user]
 	email = test@example.com
 	name = Test User
 [commit]
 	gpgsign = false
 [tag]
 	gpgsign = false
-"#;
+";
         fs::write(&config_path, config_content).unwrap();
-        let leaked = config_path.clone();
+        let leaked = config_path;
         std::mem::forget(temp_dir);
         leaked
     })
@@ -69,14 +67,13 @@ pub fn run_git_in(path: &Path, args: &[&str]) {
             )
         });
 
-    if !output.status.success() {
-        panic!(
-            "git -C {} {:?} failed: {}",
-            path.display(),
-            args,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    assert!(
+        output.status.success(),
+        "git -C {} {:?} failed: {}",
+        path.display(),
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 pub fn run_git_in_output(path: &Path, args: &[&str]) -> String {
@@ -96,14 +93,13 @@ pub fn run_git_in_output(path: &Path, args: &[&str]) -> String {
             )
         });
 
-    if !output.status.success() {
-        panic!(
-            "git -C {} {:?} failed: {}",
-            path.display(),
-            args,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    assert!(
+        output.status.success(),
+        "git -C {} {:?} failed: {}",
+        path.display(),
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
@@ -141,7 +137,7 @@ pub fn write_bump_toml(path: &Path, content: &str) {
 }
 
 pub fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
-    let (major, minor, patch, candidate) = version;
+    let (major, minor, patch, distance) = version;
     let content = format!(
         r#"[timestamp]
 format = "%Y-%m-%d %H:%M:%S %Z"
@@ -151,21 +147,20 @@ last = "2026-01-01 00:00:00 UTC"
 mode = "semver"
 prefix = "v"
 delimiter = "."
-major = {}
-minor = {}
-patch = {}
+major = {major}
+minor = {minor}
+patch = {patch}
 
 [phase]
 prefix = "-"
 name = "rc"
 delimiter = "-"
-distance = {}
+distance = {distance}
 
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-"#,
-        major, minor, patch, candidate
+"#
     );
     fs::write(path, content).unwrap();
 }
@@ -190,7 +185,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
             name: if candidate > 0 {
                 "rc".to_string()
             } else {
-                "".to_string()
+                String::new()
             },
             delimiter: "-".to_string(),
             distance: candidate,
@@ -219,7 +214,7 @@ pub fn make_calver(prefix: &str) -> Version {
         },
         phase: PhaseTable {
             prefix: "-".to_string(),
-            name: "".to_string(),
+            name: String::new(),
             delimiter: "-".to_string(),
             distance: 0,
         },

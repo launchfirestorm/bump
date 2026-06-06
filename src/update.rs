@@ -23,8 +23,7 @@ pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
         "Cargo.toml" => cargo_toml(&version, &file_path),
         "pyproject.toml" => pyproject_toml(&version, &file_path),
         _ => Err(BumpError::LogicError(format!(
-            "Unsupported file type: {}",
-            path_str
+            "Unsupported file type: {path_str}"
         ))),
     }
 }
@@ -50,7 +49,7 @@ pub fn cargo_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     }
 
     fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
-    println!("Cargo.toml updated to version {}", v_str);
+    println!("Cargo.toml updated to version {v_str}");
     Ok(())
 }
 
@@ -84,6 +83,6 @@ pub fn pyproject_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     }
 
     fs::write(path, doc.to_string()).map_err(BumpError::IoError)?;
-    println!("pyproject.toml updated to version {}", v_str);
+    println!("pyproject.toml updated to version {v_str}");
     Ok(())
 }

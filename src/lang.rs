@@ -15,22 +15,22 @@ pub enum Language {
 impl Language {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "c" => Some(Language::C),
-            "go" => Some(Language::Go),
-            "java" => Some(Language::Java),
-            "csharp" => Some(Language::CSharp),
-            "python" => Some(Language::Python),
+            "c" => Some(Self::C),
+            "go" => Some(Self::Go),
+            "java" => Some(Self::Java),
+            "csharp" => Some(Self::CSharp),
+            "python" => Some(Self::Python),
             _ => None,
         }
     }
 
-    fn file_description(self) -> &'static str {
+    const fn file_description(self) -> &'static str {
         match self {
-            Language::C => "C header file",
-            Language::Go => "Go source file",
-            Language::Java => "Java source file",
-            Language::CSharp => "C# source file",
-            Language::Python => "Python source file",
+            Self::C => "C header file",
+            Self::Go => "Go source file",
+            Self::Java => "Java source file",
+            Self::CSharp => "C# source file",
+            Self::Python => "Python source file",
         }
     }
 }
@@ -364,7 +364,7 @@ VERSION_TIMESTAMP = "{}"
     write_output(Language::Python, path, content)
 }
 
-pub fn output_file(lang: &Language, version: &Version, path: &Path) -> Result<(), BumpError> {
+pub fn output_file(lang: Language, version: &Version, path: &Path) -> Result<(), BumpError> {
     match lang {
         Language::C => c_output(version, path),
         Language::Go => go_output(version, path),

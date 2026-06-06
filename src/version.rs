@@ -53,6 +53,7 @@ pub struct Version {
     #[serde(skip)]
     pub path: PathBuf,
     pub timestamp: TimestampTable,
+    #[allow(clippy::struct_field_names)]
     pub version: VersionTable,
     pub phase: PhaseTable,
     pub suffix: SuffixTable,
@@ -60,7 +61,7 @@ pub struct Version {
 
 impl Version {
     pub fn default(path: &Path) -> Self {
-        Version {
+        Self {
             path: path.to_path_buf(),
             timestamp: TimestampTable {
                 format: "%Y-%m-%d %H:%M:%S".to_string(),
@@ -76,7 +77,7 @@ impl Version {
             },
             phase: PhaseTable {
                 prefix: "-".to_string(),
-                name: "".to_string(),
+                name: String::new(),
                 delimiter: "-".to_string(),
                 distance: 0,
             },
@@ -101,7 +102,7 @@ impl Version {
 
 [timestamp]
 format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
-last = "{}"
+last = "{current_timestamp}"
 
 # NOTE: some fields are modified by bump
 #   - mode: "semver" or "calver"
@@ -126,8 +127,7 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
-        "#,
-            current_timestamp
+        "#
         );
         fs::write(&self.path, content).map_err(BumpError::IoError)
     }
@@ -175,9 +175,9 @@ delimiter = "+"
 
         Self::warn_mode_key_mismatch(path, &content);
 
-        let version_parsed: Version = match toml::from_str(&content) {
+        let version_parsed: Self = match toml::from_str(&content) {
             Ok(v) => {
-                let mut version: Version = v;
+                let mut version: Self = v;
                 version.path = path.to_path_buf();
                 version
             }
@@ -241,18 +241,18 @@ delimiter = "+"
                 ("major", "minor", "patch", "year", "month", "day")
             };
 
-        version_table[major_key] = value(self.version.major as i64);
+        version_table[major_key] = value(i64::from(self.version.major));
         version_table.remove(old_major);
 
         if let Some(minor) = self.version.minor {
-            version_table[minor_key] = value(minor as i64);
+            version_table[minor_key] = value(i64::from(minor));
         } else {
             version_table.remove(minor_key);
         }
         version_table.remove(old_minor);
 
         if let Some(patch) = self.version.patch {
-            version_table[patch_key] = value(patch as i64);
+            version_table[patch_key] = value(i64::from(patch));
         } else {
             version_table.remove(patch_key);
         }
@@ -271,7 +271,7 @@ delimiter = "+"
         // Parse the TOML document while preserving formatting
         let mut doc = original_content
             .parse::<DocumentMut>()
-            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {}", e)))?;
+            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
 
         doc["timestamp"]["format"] = value(&self.timestamp.format);
         doc["timestamp"]["last"] = value(&self.timestamp.last);
@@ -284,7 +284,7 @@ delimiter = "+"
         doc["phase"]["prefix"] = value(&self.phase.prefix);
         doc["phase"]["name"] = value(&self.phase.name);
         doc["phase"]["delimiter"] = value(&self.phase.delimiter);
-        doc["phase"]["distance"] = value(self.phase.distance as i64);
+        doc["phase"]["distance"] = value(i64::from(self.phase.distance));
 
         doc["suffix"]["mode"] = value(&self.suffix.mode);
         doc["suffix"]["delimiter"] = value(&self.suffix.delimiter);
@@ -337,13 +337,13 @@ delimiter = "+"
                 self.version.major,
                 self.version.delimiter,
                 if self.version.mode == "calver" {
-                    format!("{:02}", minor)
+                    format!("{minor:02}")
                 } else {
                     minor.to_string()
                 },
                 self.version.delimiter,
                 if self.version.mode == "calver" {
-                    format!("{:02}", patch)
+                    format!("{patch:02}")
                 } else {
                     patch.to_string()
                 },
@@ -353,7 +353,7 @@ delimiter = "+"
                 self.version.major,
                 self.version.delimiter,
                 if self.version.mode == "calver" {
-                    format!("{:02}", minor)
+                    format!("{minor:02}")
                 } else {
                     minor.to_string()
                 },
@@ -363,7 +363,7 @@ delimiter = "+"
                 self.version.major,
                 self.version.delimiter,
                 if self.version.mode == "calver" {
-                    format!("{:02}", patch)
+                    format!("{patch:02}")
                 } else {
                     patch.to_string()
                 },
@@ -375,7 +375,7 @@ delimiter = "+"
     // empty phase name means no phase (formal release)
     fn get_phase(&self) -> String {
         if self.phase.name.is_empty() && self.phase.distance == 0 {
-            "".to_string()
+            String::new()
         } else if self.phase.name.is_empty() && self.phase.distance > 0 {
             format!("{}{}", self.phase.prefix, self.phase.distance)
         } else if self.phase.distance == 0 {
@@ -401,18 +401,17 @@ delimiter = "+"
                 let branch = get_git_branch()?;
                 Ok(format!("{}{}", self.suffix.delimiter, branch))
             }
-            _ => Ok("".to_string()), // should never happen due to validation in from_file
+            _ => Ok(String::new()), // should never happen due to validation in from_file
         }
     }
 
     fn right_mode(&self, expected_mode: &str) -> Result<(), BumpError> {
-        if self.version.mode != expected_mode {
-            Err(BumpError::LogicError(format!(
-                "Operation only valid for version.type = '{}'",
-                expected_mode
-            )))
-        } else {
+        if self.version.mode == expected_mode {
             Ok(())
+        } else {
+            Err(BumpError::LogicError(format!(
+                "Operation only valid for version.type = '{expected_mode}'"
+            )))
         }
     }
 
@@ -432,7 +431,7 @@ delimiter = "+"
                 } else {
                     None
                 };
-                self.phase.name = "".to_string();
+                self.phase.name = String::new();
                 self.phase.distance = 0;
             }
             BumpType::Minor => {
@@ -443,7 +442,7 @@ delimiter = "+"
                 } else {
                     None
                 };
-                self.phase.name = "".to_string();
+                self.phase.name = String::new();
                 self.phase.distance = 0;
             }
             BumpType::Patch => {
@@ -453,7 +452,7 @@ delimiter = "+"
                 } else {
                     None
                 };
-                self.phase.name = "".to_string();
+                self.phase.name = String::new();
                 self.phase.distance = 0;
             }
             BumpType::Phase(cli_phase_name) => {
@@ -463,7 +462,7 @@ delimiter = "+"
                     self.phase.distance += 1;
                 } else if *cli_phase_name != "__increment__" {
                     // different phase, switch to it and set distance to 1
-                    self.phase.name = cli_phase_name.clone();
+                    self.phase.name.clone_from(cli_phase_name);
                     self.phase.distance = 1;
                 } else {
                     // no arg just increment distance
@@ -472,14 +471,14 @@ delimiter = "+"
             }
             BumpType::Calendar => {
                 self.right_mode("calver")?;
-                if now.year() as u32 == self.version.major
+                if now.year().cast_unsigned() == self.version.major
                     && now.month() == self.version.minor.unwrap_or(0)
                     && now.day() == self.version.patch.unwrap_or(0)
                 {
                     // If the date hasn't changed, just increment the phase distance (if any)
                     self.phase.distance += 1;
                 }
-                self.version.major = now.year() as u32;
+                self.version.major = now.year().cast_unsigned();
                 if self.version.minor.is_some() {
                     self.version.minor = Some(now.month());
                 }
