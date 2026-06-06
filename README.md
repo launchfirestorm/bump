@@ -46,7 +46,7 @@ bump init
 
 This creates a **"BUMPFILE"** defaulted to `bump.toml` in your current directory with sensible defaults. You can rename this to how you want.
 
-To use CalVer, set `mode = "calver"` under `[version]` in your bumpfile.
+To use CalVer, set `mode = "calver"` under `[base]` in your bumpfile.
 
 ## Commands
 
@@ -67,7 +67,11 @@ bump print --no-prefix [BUMPFILE]
 bump print --no-phase [BUMPFILE]
 bump print --with-suffix [BUMPFILE]
 bump print --with-timestamp [BUMPFILE]
+bump print --with-label DEV [BUMPFILE]
 bump print --full [BUMPFILE]
+
+# Stackable (e.g. omit prefix and include suffix)
+bump print --no-prefix --with-suffix [BUMPFILE]
 ```
 
 ### PRO TIP: you can inject bump _everywhere_
@@ -104,7 +108,7 @@ bump --phase        # increment phase distance, e.g. 1.1.0-alpha.2
 ### CalVer Commands
 
 ```bash
-# Set [version].mode = "calver" in BUMPFILE, then:
+# Set [base].mode = "calver" in BUMPFILE, then:
 bump --calendar [BUMPFILE]  # Updates to current date (e.g., 2026.02.25)
 # Same-day bumps automatically increment phase distance
 ```

@@ -19,7 +19,7 @@ last = "2026-06-05 19:06:16 UTC"
 #   - mode: "semver" | "calver"
 #   - minor is optional and can be removed if not needed
 #   - patch is optional and can be removed if not needed
-[version]
+[base]
 mode = "semver"
 prefix = "v"
 delimiter = "."
@@ -30,7 +30,7 @@ patch = 0
 [phase]  
 prefix = "-"
 name = ""
-delimiter = "."
+delimiter = "-"
 distance = 0
 
 # suffix type:
@@ -39,6 +39,11 @@ distance = 0
 [suffix]
 mode = "git_sha"
 delimiter = "+"
+
+# printed label: shown but never tracked, useful for injecting dynamic values
+#  - position: "before-base", "after-base", "before-phase", "after-phase"
+[label]
+position = "before-phase"
 ```
 
 ## Key Sections
@@ -48,7 +53,7 @@ delimiter = "+"
 - `format`: `strftime` format used when writing `timestamp.last`.
 - `last`: updated on every bump operation.
 
-### `[version]`
+### `[base]`
 
 - `mode`: `semver` or `calver`.
 - `prefix`: optional leading text (for example `v`).
@@ -71,6 +76,11 @@ For compatibility, `year`, `month`, and `day` are accepted as aliases for
 - `mode`: `git_sha` or `branch`.
 - `delimiter`: separator before the suffix payload.
 
+### `[label]`
+
+- `position`: where `bump print --with-label <LABEL>` injects runtime label text.
+- Label value is never written to the bumpfile.
+
 ## Mode-Specific Behavior
 
 ### SemVer mode
@@ -87,7 +97,7 @@ For compatibility, `year`, `month`, and `day` are accepted as aliases for
 
 ## Key Remapping Rules
 
-When writing back to disk, keys are normalized to match `version.mode`.
+When writing back to disk, keys are normalized to match `base.mode`.
 
 - If `mode = "semver"`, stored keys become `major/minor/patch`.
 - If `mode = "calver"`, stored keys become `year/month/day`.
@@ -99,7 +109,7 @@ Additional safety behavior:
 
 ## Print Output Modes
 
-Use the `print` subcommand:
+Use the `print` subcommand. Flags are stackable except `--only-*` and `--full`:
 
 ```bash
 Print [prefix][base][phase] from BUMPFILE without newline
@@ -110,14 +120,15 @@ Arguments:
   [BUMPFILE]  Path to the configuration file [default: bump.toml]
 
 Options:
-      --only-prefix     Print [prefix]
-      --only-phase      Print [phase]
-      --only-base       Print [base]
-      --no-prefix       Print [base][phase]
-      --no-phase        Print [prefix][base]
-      --with-suffix     Print [prefix][base][phase][suffix]
-      --with-timestamp  Print [prefix][base][phase][timestamp]
-      --full            Print [prefix][base][phase][suffix][timestamp]
+      --only-prefix     Print [prefix] only
+      --only-phase      Print [phase] only
+      --only-base       Print [base] only
+      --no-prefix       Omit [prefix]
+      --no-phase        Omit [phase]
+      --with-suffix     Append [suffix]
+      --with-timestamp  Append [timestamp]
+      --with-label      Inject LABEL at [label].position (not persisted)
+      --full            Print full output; overrides all flags except --with-label
   -h, --help            Print help
 ```
 
