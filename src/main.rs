@@ -5,8 +5,7 @@ use std::process::ExitCode;
 mod bump;
 mod cli;
 mod lang;
-#[cfg(test)]
-mod tests;
+mod print;
 mod update;
 mod version;
 
@@ -35,11 +34,9 @@ fn main() -> ExitCode {
         }
         Some(("tag", sub_matches)) => egress(bump::tag_version(sub_matches)),
         Some(("update", sub_matches)) => egress(update::modify_file(sub_matches)),
-        Some(("print", sub_matches)) => egress(bump::print(sub_matches)),
+        Some(("print", sub_matches)) => egress(print::run(sub_matches)),
         _ => {
-            if matches.contains_id("meta") {
-                egress(bump::meta(&matches))
-            } else if matches.contains_id("formal") {
+            if bump::has_meta_flags(&matches) || matches.contains_id("formal") {
                 egress(bump::apply(&matches))
             } else {
                 egress(Err(BumpError::LogicError(

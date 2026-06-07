@@ -52,9 +52,11 @@ jobs:
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
 
-    - name: Test (skip cross-compiled targets for now)
-      if: matrix.cross_compile == false
-      run: cargo test --release --target ${{ matrix.target }}
+    - name: Test (skip cross-compiled and Windows targets for now)
+      if: matrix.cross_compile == false && matrix.os != 'windows-latest'
+      env:
+        BUMP_BIN: target/${{ matrix.target }}/release/bump
+      run: tests/output.sh
 
     - name: Prepare binary for upload
       shell: bash

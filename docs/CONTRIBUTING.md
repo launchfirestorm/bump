@@ -50,7 +50,8 @@ The debug binary will be available at `target/debug/bump`.
 ### Running Tests
 
 ```bash
-cargo test
+cargo build
+bash tests/output.sh
 ```
 
 ## Project Structure
@@ -63,11 +64,9 @@ bump/
 │   ├── bump.rs       # Core business logic
 │   ├── version.rs    # Version struct, TOML parsing, and bumping logic
 │   ├── lang.rs       # Code generation for multiple languages
-│   ├── update.rs     # File updating (e.g., Cargo.toml)
-│   └── tests/        # Test modules
-│       ├── mod.rs
-│       ├── semver.rs
-│       └── calver.rs
+│   └── update.rs     # File updating (e.g., Cargo.toml)
+├── tests/            # Shell integration tests
+│   └── output.sh
 ├── docs/             # Documentation
 └── Cargo.toml        # Rust project configuration
 ```

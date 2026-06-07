@@ -1,27 +1,102 @@
-use crate::bump::{
-    BumpError, BumpType, PrintType, get_git_branch, get_git_commit_sha, is_git_repository,
-};
+use crate::bump::{BumpError, BumpType};
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs, io,
+    fmt, fs, io,
     path::{Path, PathBuf},
 };
 use toml_edit::{DocumentMut, value};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VersionMode {
+    Semver,
+    Calver,
+}
+
+impl VersionMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Semver => "semver",
+            Self::Calver => "calver",
+        }
+    }
+}
+
+impl fmt::Display for VersionMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuffixMode {
+    #[serde(rename = "git_sha")]
+    GitSha,
+    Branch,
+}
+
+impl SuffixMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::GitSha => "git_sha",
+            Self::Branch => "branch",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, BumpError> {
+        match value {
+            "git_sha" => Ok(Self::GitSha),
+            "branch" => Ok(Self::Branch),
+            _ => Err(BumpError::LogicError(format!(
+                "Invalid suffix mode: '{value}'. Expected 'git_sha' or 'branch'."
+            ))),
+        }
+    }
+}
+
+impl fmt::Display for SuffixMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LabelPosition {
+    BeforePrefix,
+    AfterPrefix,
+    BeforeBase,
+    AfterBase,
+    BeforePhase,
+    AfterPhase,
+}
+
+impl LabelPosition {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BeforePrefix => "before-prefix",
+            Self::AfterPrefix => "after-prefix",
+            Self::BeforeBase => "before-base",
+            Self::AfterBase => "after-base",
+            Self::BeforePhase => "before-phase",
+            Self::AfterPhase => "after-phase",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimestampTable {
+pub struct Timestamp {
     pub format: String,
     pub last: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VersionTable {
-    pub mode: String,
-    pub prefix: String,
+pub struct Base {
+    pub mode: VersionMode,
     pub delimiter: String,
 
-    // semver and calver share the same fields but with different meanings
     #[serde(alias = "year")]
     pub major: u32,
 
@@ -35,130 +110,89 @@ pub struct VersionTable {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PhaseTable {
-    pub prefix: String,
+pub struct Phase {
+    pub separator: String,
     pub name: String,
     pub delimiter: String,
     pub distance: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SuffixTable {
-    pub mode: String,
-    pub delimiter: String,
+pub struct Suffix {
+    pub mode: SuffixMode,
+    pub separator: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Label {
+    pub position: LabelPosition,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Version {
     #[serde(skip)]
     pub path: PathBuf,
-    pub timestamp: TimestampTable,
-    #[allow(clippy::struct_field_names)]
-    pub version: VersionTable,
-    pub phase: PhaseTable,
-    pub suffix: SuffixTable,
+    pub prefix: String,
+    pub timestamp: Timestamp,
+    pub base: Base,
+    pub phase: Phase,
+    pub suffix: Suffix,
+    pub label: Label,
 }
+
+const INIT_TEMPLATE_TIMESTAMP: &str = "1970-01-01 00:00:00 UTC";
 
 impl Version {
     pub fn default(path: &Path) -> Self {
-        Self {
-            path: path.to_path_buf(),
-            timestamp: TimestampTable {
-                format: "%Y-%m-%d %H:%M:%S".to_string(),
-                last: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            },
-            version: VersionTable {
-                mode: "semver".to_string(),
-                prefix: "v".to_string(),
-                delimiter: ".".to_string(),
-                major: 0,
-                minor: Some(1),
-                patch: Some(0),
-            },
-            phase: PhaseTable {
-                prefix: "-".to_string(),
-                name: String::new(),
-                delimiter: "-".to_string(),
-                distance: 0,
-            },
-            suffix: SuffixTable {
-                mode: "git_sha".to_string(),
-                delimiter: "+".to_string(),
-            },
-        }
+        let content = include_str!("templates/bump.toml")
+            .replace("{timestamp}", INIT_TEMPLATE_TIMESTAMP);
+        let mut version: Self = toml::from_str(&content).expect("init template must deserialize");
+        version.path = path.to_path_buf();
+        version.timestamp.last = chrono::Utc::now()
+            .format(&version.timestamp.format)
+            .to_string();
+        version
     }
 
     pub fn create_file(&self) -> Result<(), BumpError> {
-        let strftime = "%Y-%m-%d %H:%M:%S %Z";
-        let now = chrono::Utc::now();
-        let current_timestamp = now.format(strftime).to_string();
-        let content = format!(
-            r#"#  ____  __  __  __  __  ____ 
-# (  _ \(  )(  )(  \/  )(  _ \
-#  ) _ < )(__)(  )    (  )___/
-# (____/(______)(_/\/\_)(__)
-#
-# https://github.com/launchfirestorm/bump
-
-[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
-last = "{current_timestamp}"
-
-# NOTE: some fields are modified by bump
-#   - mode: "semver" or "calver"
-#   - minor|patch: optional, can be removed if not needed
-[version]
-mode = "semver"
-prefix = "v"
-delimiter = "."
-major = 0  
-minor = 1
-patch = 0
-
-[phase]  
-prefix = "-"
-name = ""
-delimiter = "."
-distance = 0
-
-# suffix type:
-#  - "git_sha"  : append 7 char sha1 of the current commit (default)
-#  - "branch"   : append the current git branch name
-[suffix]
-mode = "git_sha"
-delimiter = "+"
-        "#
-        );
+        let current_timestamp = chrono::Utc::now()
+            .format(&self.timestamp.format)
+            .to_string();
+        let content =
+            include_str!("templates/bump.toml").replace("{timestamp}", &current_timestamp);
         fs::write(&self.path, content).map_err(BumpError::IoError)
     }
 
-    fn warn_mode_key_mismatch(path: &Path, content: &str) {
-        let Ok(doc) = content.parse::<toml_edit::DocumentMut>() else {
-            return;
-        };
+    fn warn_mode_key_mismatch(path: &Path, content: &str) -> Result<(), BumpError> {
+        let doc = content
+            .parse::<DocumentMut>()
+            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
 
-        let Some(version) = doc["version"].as_table() else {
-            return;
-        };
+        let base = doc["base"].as_table().ok_or_else(|| {
+            BumpError::ParseError(format!(
+                "'base' table not found in {}. \
+                Recreate your bumpfile with 'bump init'.",
+                path.display()
+            ))
+        })?;
 
-        let mode = version
+        let mode = base
             .get("mode")
             .and_then(|v| v.as_str())
-            .unwrap_or("semver");
+            .unwrap_or(VersionMode::Semver.as_str());
+        let has_calver_keys = ["year", "month", "day"]
+            .iter()
+            .any(|key| base.contains_key(key));
 
-        if mode == "semver" {
-            let has_calver_keys = version.contains_key("year")
-                || version.contains_key("month")
-                || version.contains_key("day");
-
-            if has_calver_keys {
-                println!(
-                    "bump warning: [version].mode is semver, but found calver keys (year/month/day) in {}. \
-                    \nThey will be treated as major/minor/patch and rewritten on save.",
-                    path.display()
-                );
-            }
+        if mode == VersionMode::Semver.as_str() && has_calver_keys {
+            println!(
+                "bump warning: [base].mode is semver, but found calver keys (year/month/day) in {}. \
+                \nThey will be treated as major/minor/patch and rewritten on save.",
+                path.display()
+            );
         }
+
+        Ok(())
     }
 
     pub fn from_file(path: &Path) -> Result<Self, BumpError> {
@@ -173,94 +207,58 @@ delimiter = "+"
             }
         })?;
 
-        Self::warn_mode_key_mismatch(path, &content);
+        Self::warn_mode_key_mismatch(path, &content)?;
 
         let version_parsed: Self = match toml::from_str(&content) {
             Ok(v) => {
-                let mut version: Self = v;
+                let mut version: Version = v;
                 version.path = path.to_path_buf();
                 version
             }
             Err(err) => {
-                if ".version"
-                    == content
-                        .lines()
-                        .find(|line| line.trim() == ".version")
-                        .unwrap_or("")
-                {
-                    return Err(BumpError::ParseError(format!(
-                        "Failed to parse file '{}': {}. \
-                        \nDetected old format with [*.version] table. \
-                        \nPlease update [version.mode] to 'semver' or 'calver'. \
-                        \nSee https://github.com/launchfirestorm/bump",
-                        path.display(),
-                        err
-                    )));
-                }
                 return Err(BumpError::ParseError(format!(
-                    "Failed to parse version file '{}': {}",
+                    "Failed to parse version file '{}': {}. \
+                    Recreate your bumpfile with 'bump init'.",
                     path.display(),
                     err
                 )));
             }
         };
 
-        match version_parsed.version.mode.as_str() {
-            "semver" | "calver" => (),
-            _ => {
-                return Err(BumpError::ParseError(format!(
-                    "Invalid version type '{}' in '{}'. Expected 'semver' or 'calver'.",
-                    version_parsed.version.mode,
-                    path.display()
-                )));
-            }
-        }
-
-        match version_parsed.suffix.mode.as_str() {
-            "git_sha" | "branch" => (),
-            _ => {
-                return Err(BumpError::ParseError(format!(
-                    "Invalid suffix type '{}' in '{}'. Expected 'git_sha' or 'branch'.",
-                    version_parsed.suffix.mode,
-                    path.display()
-                )));
-            }
-        }
         Ok(version_parsed)
     }
 
-    fn version_remap(&self, doc: &mut DocumentMut) {
-        let Some(version_table) = doc["version"].as_table_mut() else {
+    fn base_remap(&self, doc: &mut DocumentMut) {
+        let Some(base_table) = doc["base"].as_table_mut() else {
             return;
         };
 
         let (major_key, minor_key, patch_key, old_major, old_minor, old_patch) =
-            if self.version.mode == "calver" {
+            if self.base.mode == VersionMode::Calver {
                 ("year", "month", "day", "major", "minor", "patch")
             } else {
                 ("major", "minor", "patch", "year", "month", "day")
             };
 
-        version_table[major_key] = value(i64::from(self.version.major));
-        version_table.remove(old_major);
+        base_table[major_key] = value(i64::from(self.base.major));
+        base_table.remove(old_major);
 
-        if let Some(minor) = self.version.minor {
-            version_table[minor_key] = value(i64::from(minor));
+        if let Some(minor) = self.base.minor {
+            base_table[minor_key] = value(i64::from(minor));
         } else {
-            version_table.remove(minor_key);
+            base_table.remove(minor_key);
         }
-        version_table.remove(old_minor);
+        base_table.remove(old_minor);
 
-        if let Some(patch) = self.version.patch {
-            version_table[patch_key] = value(i64::from(patch));
+        if let Some(patch) = self.base.patch {
+            base_table[patch_key] = value(i64::from(patch));
         } else {
-            version_table.remove(patch_key);
+            base_table.remove(patch_key);
         }
-        version_table.remove(old_patch);
+        base_table.remove(old_patch);
     }
 
     pub fn to_file(&self) -> Result<(), BumpError> {
-        // Try to read existing file to preserve comments and formatting
         if !self.path.exists() {
             return Err(BumpError::IoError(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -268,226 +266,88 @@ delimiter = "+"
             )));
         }
         let original_content = fs::read_to_string(&self.path).map_err(BumpError::IoError)?;
-        // Parse the TOML document while preserving formatting
         let mut doc = original_content
             .parse::<DocumentMut>()
             .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
 
+        doc["prefix"] = value(&self.prefix);
         doc["timestamp"]["format"] = value(&self.timestamp.format);
         doc["timestamp"]["last"] = value(&self.timestamp.last);
-
-        doc["version"]["mode"] = value(&self.version.mode);
-        doc["version"]["prefix"] = value(&self.version.prefix);
-        doc["version"]["delimiter"] = value(&self.version.delimiter);
-        self.version_remap(&mut doc);
-
-        doc["phase"]["prefix"] = value(&self.phase.prefix);
+        doc["base"]["mode"] = value(self.base.mode.as_str());
+        doc["base"]["delimiter"] = value(&self.base.delimiter);
+        self.base_remap(&mut doc);
+        doc["phase"]["separator"] = value(&self.phase.separator);
         doc["phase"]["name"] = value(&self.phase.name);
         doc["phase"]["delimiter"] = value(&self.phase.delimiter);
         doc["phase"]["distance"] = value(i64::from(self.phase.distance));
-
-        doc["suffix"]["mode"] = value(&self.suffix.mode);
-        doc["suffix"]["delimiter"] = value(&self.suffix.delimiter);
+        doc["suffix"]["mode"] = value(self.suffix.mode.as_str());
+        doc["suffix"]["separator"] = value(&self.suffix.separator);
+        doc["label"]["position"] = value(self.label.position.as_str());
 
         fs::write(self.path.as_path(), doc.to_string()).map_err(BumpError::IoError)
     }
 
-    pub fn to_string(&self, print_type: &PrintType) -> Result<String, BumpError> {
-        match print_type {
-            PrintType::OnlyPrefix => Ok(self.version.prefix.clone()),
-            PrintType::OnlyPhase => Ok(self.phase.name.clone()),
-            PrintType::OnlyBase => Ok(self.get_base()),
-            PrintType::Regular => Ok(format!(
-                "{}{}{}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase()
-            )),
-            PrintType::NoPrefix => Ok(format!("{}{}", self.get_base(), self.get_phase())),
-            PrintType::NoPhase => Ok(format!("{}{}", self.version.prefix, self.get_base())),
-            PrintType::WithSuffix => Ok(format!(
-                "{}{}{}{}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase(),
-                self.get_suffix()?
-            )),
-            PrintType::WithTimestamp => Ok(format!(
-                "{}{}{}  {}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase(),
-                self.timestamp.last
-            )),
-            PrintType::Full => Ok(format!(
-                "{}{}{}{}  {}",
-                self.version.prefix,
-                self.get_base(),
-                self.get_phase(),
-                self.get_suffix()?,
-                self.timestamp.last
-            )),
-        }
-    }
-
-    fn get_base(&self) -> String {
-        match (self.version.minor, self.version.patch) {
-            (Some(minor), Some(patch)) => format!(
-                "{}{}{}{}{}",
-                self.version.major,
-                self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{minor:02}")
-                } else {
-                    minor.to_string()
-                },
-                self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{patch:02}")
-                } else {
-                    patch.to_string()
-                },
-            ),
-            (Some(minor), None) => format!(
-                "{}{}{}",
-                self.version.major,
-                self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{minor:02}")
-                } else {
-                    minor.to_string()
-                },
-            ),
-            (None, Some(patch)) => format!(
-                "{}{}{}",
-                self.version.major,
-                self.version.delimiter,
-                if self.version.mode == "calver" {
-                    format!("{patch:02}")
-                } else {
-                    patch.to_string()
-                },
-            ),
-            _ => self.version.major.to_string(),
-        }
-    }
-
-    // empty phase name means no phase (formal release)
-    fn get_phase(&self) -> String {
-        if self.phase.name.is_empty() && self.phase.distance == 0 {
-            String::new()
-        } else if self.phase.name.is_empty() && self.phase.distance > 0 {
-            format!("{}{}", self.phase.prefix, self.phase.distance)
-        } else if self.phase.distance == 0 {
-            format!("{}{}", self.phase.prefix, self.phase.name,)
-        } else {
-            format!(
-                "{}{}{}{}",
-                self.phase.prefix, self.phase.name, self.phase.delimiter, self.phase.distance
-            )
-        }
-    }
-
-    fn get_suffix(&self) -> Result<String, BumpError> {
-        if !is_git_repository() {
-            return Err(BumpError::Git("Not a git repository".to_string()));
-        }
-        match self.suffix.mode.as_str() {
-            "git_sha" => {
-                let sha = get_git_commit_sha()?;
-                Ok(format!("{}{}", self.suffix.delimiter, sha))
-            }
-            "branch" => {
-                let branch = get_git_branch()?;
-                Ok(format!("{}{}", self.suffix.delimiter, branch))
-            }
-            _ => Ok(String::new()), // should never happen due to validation in from_file
-        }
-    }
-
-    fn right_mode(&self, expected_mode: &str) -> Result<(), BumpError> {
-        if self.version.mode == expected_mode {
+    fn right_mode(&self, expected_mode: VersionMode) -> Result<(), BumpError> {
+        if self.base.mode == expected_mode {
             Ok(())
         } else {
             Err(BumpError::LogicError(format!(
-                "Operation only valid for version.type = '{expected_mode}'"
+                "Operation only valid for version.type = '{}'",
+                expected_mode.as_str()
             )))
         }
+    }
+
+    fn clear_phase(&mut self) {
+        self.phase.name = String::new();
+        self.phase.distance = 0;
     }
 
     pub fn bump(&mut self, bump_type: &BumpType) -> Result<(), BumpError> {
         let now = chrono::Utc::now();
         match bump_type {
             BumpType::Major => {
-                self.right_mode("semver")?;
-                self.version.major += 1;
-                self.version.minor = if self.version.minor.is_some() {
-                    Some(0)
-                } else {
-                    None
-                };
-                self.version.patch = if self.version.patch.is_some() {
-                    Some(0)
-                } else {
-                    None
-                };
-                self.phase.name = String::new();
-                self.phase.distance = 0;
+                self.right_mode(VersionMode::Semver)?;
+                self.base.major += 1;
+                self.base.minor = self.base.minor.map(|_| 0);
+                self.base.patch = self.base.patch.map(|_| 0);
+                self.clear_phase();
             }
             BumpType::Minor => {
-                self.right_mode("semver")?;
-                self.version.minor = Some(self.version.minor.unwrap_or(0) + 1);
-                self.version.patch = if self.version.patch.is_some() {
-                    Some(0)
-                } else {
-                    None
-                };
-                self.phase.name = String::new();
-                self.phase.distance = 0;
+                self.right_mode(VersionMode::Semver)?;
+                self.base.minor = self.base.minor.map(|m| m + 1);
+                self.base.patch = self.base.patch.map(|_| 0);
+                self.clear_phase();
             }
             BumpType::Patch => {
-                self.right_mode("semver")?;
-                self.version.patch = if self.version.patch.is_some() {
-                    Some(self.version.patch.unwrap_or(0) + 1)
-                } else {
-                    None
-                };
-                self.phase.name = String::new();
-                self.phase.distance = 0;
+                self.right_mode(VersionMode::Semver)?;
+                self.base.patch = self.base.patch.map(|p| p + 1);
+                self.clear_phase();
             }
             BumpType::Phase(cli_phase_name) => {
-                // BOTH modes have phases
                 if cli_phase_name == &self.phase.name {
-                    // same phase, just increment distance
                     self.phase.distance += 1;
                 } else if *cli_phase_name != "__increment__" {
-                    // different phase, switch to it and set distance to 1
                     self.phase.name.clone_from(cli_phase_name);
                     self.phase.distance = 1;
                 } else {
-                    // no arg just increment distance
                     self.phase.distance += 1;
                 }
             }
             BumpType::Calendar => {
-                self.right_mode("calver")?;
-                if now.year().cast_unsigned() == self.version.major
-                    && now.month() == self.version.minor.unwrap_or(0)
-                    && now.day() == self.version.patch.unwrap_or(0)
+                self.right_mode(VersionMode::Calver)?;
+                if now.year().cast_unsigned() == self.base.major
+                    && now.month() == self.base.minor.unwrap_or(0)
+                    && now.day() == self.base.patch.unwrap_or(0)
                 {
-                    // If the date hasn't changed, just increment the phase distance (if any)
                     self.phase.distance += 1;
-                }
-                self.version.major = now.year().cast_unsigned();
-                if self.version.minor.is_some() {
-                    self.version.minor = Some(now.month());
-                }
-                if self.version.patch.is_some() {
-                    self.version.patch = Some(now.day());
+                } else {
+                    self.base.major = now.year().cast_unsigned();
+                    self.base.minor = self.base.minor.map(|_| now.month());
+                    self.base.patch = self.base.patch.map(|_| now.day());
                 }
             }
         }
-        // always update timestamp on bump
         self.timestamp.last = now.format(&self.timestamp.format).to_string();
         Ok(())
     }
