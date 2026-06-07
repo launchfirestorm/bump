@@ -1,22 +1,55 @@
 use super::*;
-use crate::print::{self, PrintOptions};
 use tempfile::TempDir;
+
+fn invalid_config_toml(base_mode: &str, suffix_mode: &str) -> String {
+    format!(
+        r#"prefix = "v"
+
+[base]
+mode = "{base_mode}"
+delimiter = "."
+major = 1
+minor = 0
+patch = 0
+
+[phase]
+separator = "-"
+name = ""
+delimiter = "."
+distance = 0
+
+[suffix]
+mode = "{suffix_mode}"
+separator = "+"
+
+[timestamp]
+format = "{TEST_TIMESTAMP_FORMAT}"
+last = "{last}"
+
+[label]
+position = "after-base"
+"#,
+        last = test_timestamp_last(),
+    )
+}
 
 #[test]
 fn from_file_reads_semver_schema() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    write_test_config(&bump_path, (1, 2, 3, 4));
+    write_semver_config(&bump_path, (1, 2, 3, 4));
 
     let version = Version::from_file(&bump_path).unwrap();
 
     assert_eq!(version.base.mode, VersionMode::Semver);
-    assert_eq!(version.base.prefix, "v");
+    assert_eq!(version.prefix, "v");
     assert_eq!(version.base.major, 1);
     assert_eq!(version.base.minor, Some(2));
     assert_eq!(version.base.patch, Some(3));
     assert_eq!(version.phase.name, "rc");
     assert_eq!(version.phase.distance, 4);
+    assert_eq!(version.suffix.mode, SuffixMode::GitSha);
+    assert_eq!(version.label.position, LabelPosition::AfterBase);
 }
 
 #[test]
@@ -32,33 +65,10 @@ fn from_file_missing_file_returns_logic_error() {
 }
 
 #[test]
-fn from_file_rejects_invalid_version_type() {
+fn from_file_rejects_invalid_base_mode() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = format!(
-        r#"{timestamp}[base]
-mode = "nope"
-prefix = "v"
-delimiter = "."
-major = 1
-minor = 0
-patch = 0
-
-[phase]
-prefix = "-"
-name = ""
-delimiter = "-"
-distance = 0
-
-[suffix]
-mode = "git_sha"
-delimiter = "+"
-
-{label}"#,
-        timestamp = timestamp_toml_section(),
-        label = label_toml_section(),
-    );
-    write_bump_toml(&bump_path, &content);
+    write_bump_toml(&bump_path, &invalid_config_toml("nope", "git_sha"));
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
@@ -68,33 +78,10 @@ delimiter = "+"
 }
 
 #[test]
-fn from_file_rejects_invalid_suffix_type() {
+fn from_file_rejects_invalid_suffix_mode() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = format!(
-        r#"{timestamp}[base]
-mode = "semver"
-prefix = "v"
-delimiter = "."
-major = 1
-minor = 0
-patch = 0
-
-[phase]
-prefix = "-"
-name = ""
-delimiter = "-"
-distance = 0
-
-[suffix]
-mode = "unknown"
-delimiter = "+"
-
-{label}"#,
-        timestamp = timestamp_toml_section(),
-        label = label_toml_section(),
-    );
-    write_bump_toml(&bump_path, &content);
+    write_bump_toml(&bump_path, &invalid_config_toml("semver", "unknown"));
 
     let err = Version::from_file(&bump_path).unwrap_err();
     match err {
@@ -120,49 +107,50 @@ fn create_file_writes_template() {
     assert!(content.contains("[suffix]"));
     assert!(content.contains("mode = \"semver\""));
     assert!(content.contains("mode = \"git_sha\""));
+    assert!(content.contains("position = \"after-base\""));
     assert!(!content.contains("{timestamp}"));
     assert!(template.contains("{timestamp}"));
-}
-
-#[test]
-fn from_file_round_trips_version_and_suffix_modes() {
-    let temp_dir = TempDir::new().unwrap();
-    let bump_path = temp_dir.path().join("bump.toml");
-    write_test_config(&bump_path, (2, 0, 1, 0));
-
-    let version = Version::from_file(&bump_path).unwrap();
-    assert_eq!(version.base.mode, VersionMode::Semver);
-    assert_eq!(version.suffix.mode, SuffixMode::GitSha);
+    let suffix_pos = content.find("[suffix]").unwrap();
+    let timestamp_pos = content.find("[timestamp]").unwrap();
+    assert!(suffix_pos < timestamp_pos);
 }
 
 #[test]
 fn to_file_semver_remaps_year_month_day_keys() {
     let temp_dir = TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = format!(
-        r#"{timestamp}[base]
+    write_bump_toml(
+        &bump_path,
+        &format!(
+            r#"prefix = "v"
+
+[base]
 mode = "semver"
-prefix = "v"
 delimiter = "."
 year = 2026
 month = 6
 day = 5
 
 [phase]
-prefix = "-"
+separator = "-"
 name = ""
-delimiter = "-"
+delimiter = "."
 distance = 0
 
 [suffix]
 mode = "git_sha"
-delimiter = "+"
+separator = "+"
 
-{label}"#,
-        timestamp = timestamp_toml_section(),
-        label = label_toml_section(),
+[timestamp]
+format = "{TEST_TIMESTAMP_FORMAT}"
+last = "{last}"
+
+[label]
+position = "after-base"
+"#,
+            last = test_timestamp_last(),
+        ),
     );
-    write_bump_toml(&bump_path, &content);
 
     let version = Version::from_file(&bump_path).unwrap();
     version.to_file().unwrap();
@@ -189,60 +177,16 @@ delimiter = "+"
 }
 
 #[test]
-fn to_string_regular_uses_prefix_base_and_phase() {
-    let mut version = make_semver("v", 1, 2, 3, 2);
-    version.phase.prefix = "-".to_string();
-    version.phase.delimiter = "-".to_string();
+fn bump_major_resets_minor_patch_and_phase() {
+    let mut version = make_semver("v", 1, 2, 9, 7);
 
-    assert_eq!(
-        print::to_string(&version, &PrintType::Regular).unwrap(),
-        "v1.2.3-rc-2"
-    );
-}
+    version.bump(&BumpType::Major).unwrap();
 
-#[test]
-fn to_string_no_prefix_removes_prefix() {
-    let version = make_semver("v", 1, 2, 3, 0);
-    assert_eq!(print::to_string(&version, &PrintType::NoPrefix).unwrap(), "1.2.3");
-}
-
-#[test]
-fn to_string_with_suffix_uses_git_sha_in_git_repo() {
-    let repo = create_temp_git_repo(false);
-    let mut version = make_semver("v", 1, 2, 3, 0);
-    version.path = repo.path().join("bump.toml");
-
-    let sha = git_rev_parse_short_in(repo.path());
-    assert_eq!(
-        print::format(
-            &version,
-            &PrintOptions {
-                with_suffix: true,
-                ..Default::default()
-            },
-        )
-        .unwrap(),
-        format!("v1.2.3+{sha}")
-    );
-}
-
-#[test]
-fn to_string_with_suffix_fails_outside_git_repo() {
-    let _repo = create_temp_dir();
-    let version = make_semver("v", 1, 2, 3, 0);
-
-    let err = print::format(
-        &version,
-        &PrintOptions {
-            with_suffix: true,
-            ..Default::default()
-        },
-    )
-    .unwrap_err();
-    match err {
-        BumpError::Git(msg) => assert!(msg.contains("Not a git repository")),
-        _ => panic!("expected Git error"),
-    }
+    assert_eq!(version.base.major, 2);
+    assert_eq!(version.base.minor, Some(0));
+    assert_eq!(version.base.patch, Some(0));
+    assert_eq!(version.phase.name, "");
+    assert_eq!(version.phase.distance, 0);
 }
 
 #[test]

@@ -131,7 +131,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
     let has_formal = matches.contains_id("formal");
 
     if let Some(prefix) = matches.get_one::<String>("prefix") {
-        version.base.prefix.clone_from(prefix);
+        version.prefix.clone_from(prefix);
     }
     if let Some(suffix) = matches.get_one::<String>("suffix") {
         version.suffix.mode = crate::version::SuffixMode::parse(suffix)?;

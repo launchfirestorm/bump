@@ -28,28 +28,41 @@ fn calendar_bump_rejected_for_semver() {
 }
 
 #[test]
+fn semver_bump_rejected_for_calver() {
+    let mut version = make_calver("");
+
+    let err = version.bump(&BumpType::Patch).unwrap_err();
+    match err {
+        BumpError::LogicError(msg) => {
+            assert!(msg.contains("Operation only valid for version.type = 'semver'"));
+        }
+        _ => panic!("expected LogicError"),
+    }
+}
+
+#[test]
 fn calendar_bump_increments_phase_distance_when_same_day() {
     let now = chrono::Utc::now();
     let mut version = Version {
         path: "test.toml".into(),
         timestamp: test_timestamp(),
+        prefix: String::new(),
         base: Base {
             mode: VersionMode::Calver,
-            prefix: String::new(),
             delimiter: ".".to_string(),
             major: now.year().cast_unsigned(),
             minor: Some(now.month()),
             patch: Some(now.day()),
         },
         phase: Phase {
-            prefix: "-".to_string(),
+            separator: "-".to_string(),
             name: String::new(),
             delimiter: "-".to_string(),
             distance: 4,
         },
         suffix: Suffix {
             mode: SuffixMode::GitSha,
-            delimiter: "+".to_string(),
+            separator: "+".to_string(),
         },
         label: default_label(),
     };
@@ -63,30 +76,7 @@ fn calendar_bump_increments_phase_distance_when_same_day() {
 fn to_file_calver_remaps_major_minor_patch_keys() {
     let temp_dir = tempfile::TempDir::new().unwrap();
     let bump_path = temp_dir.path().join("bump.toml");
-    let content = format!(
-        r#"{timestamp}[base]
-mode = "calver"
-prefix = ""
-delimiter = "."
-major = 2026
-minor = 6
-patch = 5
-
-[phase]
-prefix = "-"
-name = ""
-delimiter = "-"
-distance = 0
-
-[suffix]
-mode = "git_sha"
-delimiter = "+"
-
-{label}"#,
-        timestamp = timestamp_toml_section(),
-        label = label_toml_section(),
-    );
-    write_bump_toml(&bump_path, &content);
+    write_calver_config(&bump_path, (2026, 6, 5, 0));
 
     let version = Version::from_file(&bump_path).unwrap();
     version.to_file().unwrap();

@@ -11,26 +11,22 @@
 #
 # https://github.com/launchfirestorm/bump
 
-[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
-last = "2026-06-05 19:06:16 UTC"
+prefix = "v"
 
 # NOTE: some fields are modified by bump
 #   - mode: "semver" | "calver"
-#   - minor is optional and can be removed if not needed
-#   - patch is optional and can be removed if not needed
+#   - minor|patch: optional, can be removed if not needed
 [base]
 mode = "semver"
-prefix = "v"
 delimiter = "."
 major = 0  
 minor = 1
 patch = 0
 
 [phase]  
-prefix = "-"
+separator = "-"
 name = ""
-delimiter = "-"
+delimiter = "."
 distance = 0
 
 # suffix type:
@@ -38,15 +34,25 @@ distance = 0
 #  - "branch"   : append the current git branch name
 [suffix]
 mode = "git_sha"
-delimiter = "+"
+separator = "+"
+
+[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
+last = "2026-06-05 19:06:16 UTC"
 
 # printed label: shown but never tracked, useful for injecting dynamic values
-#  - position: "before-base", "after-base", "before-phase", "after-phase"
+#  - position: "before-prefix", "after-prefix", "before-base", "after-base",
+#              "before-phase", "after-phase"
 [label]
-position = "before-phase"
+position = "after-base"
 ```
 
 ## Key Sections
+
+### `prefix` (top-level)
+
+- Optional leading text printed before the numeric base (for example `v`).
+- Omitted from output with `bump print --no-prefix`.
 
 ### `[timestamp]`
 
@@ -56,7 +62,6 @@ position = "before-phase"
 ### `[base]`
 
 - `mode`: `semver` or `calver`.
-- `prefix`: optional leading text (for example `v`).
 - `delimiter`: separator for base components.
 - `major`, `minor`, `patch`: numeric components.
 - `minor` and `patch` are optional.
@@ -66,7 +71,7 @@ For compatibility, `year`, `month`, and `day` are accepted as aliases for
 
 ### `[phase]`
 
-- `prefix`: inserted before phase data (commonly `-`).
+- `separator`: inserted before phase data (commonly `-`).
 - `name`: phase label (for example `rc`, `beta`, or empty).
 - `delimiter`: separator between `name` and `distance`.
 - `distance`: phase counter.
@@ -74,12 +79,15 @@ For compatibility, `year`, `month`, and `day` are accepted as aliases for
 ### `[suffix]`
 
 - `mode`: `git_sha` or `branch`.
-- `delimiter`: separator before the suffix payload.
+- `separator`: separator before the suffix payload.
 
 ### `[label]`
 
 - `position`: where `bump print --with-label <LABEL>` injects runtime label text.
 - Label value is never written to the bumpfile.
+- The label is only printed when its anchored segment is part of the current
+  assembly (for example, a `before-phase` label is omitted when `--no-phase`
+  is used).
 
 ## Mode-Specific Behavior
 

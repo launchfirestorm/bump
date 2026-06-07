@@ -150,69 +150,99 @@ pub fn test_timestamp() -> Timestamp {
     }
 }
 
-pub fn timestamp_toml_section() -> String {
-    format!(
-        "[timestamp]\nformat = \"{TEST_TIMESTAMP_FORMAT}\"\nlast = \"{}\"\n\n",
-        test_timestamp_last()
-    )
-}
-
-pub fn label_toml_section() -> String {
-    "[label]\nposition = \"before-phase\"\n\n".to_string()
+pub fn default_label() -> Label {
+    Label {
+        position: LabelPosition::AfterBase,
+    }
 }
 
 pub fn write_bump_toml(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-pub fn write_test_config(path: &Path, version: (u32, u32, u32, u32)) {
+pub fn write_semver_config(path: &Path, version: (u32, u32, u32, u32)) {
     let (major, minor, patch, distance) = version;
+    let phase_name = if distance > 0 { "rc" } else { "" };
     let content = format!(
-        r#"{timestamp}[base]
+        r#"prefix = "v"
+
+[base]
 mode = "semver"
-prefix = "v"
 delimiter = "."
 major = {major}
 minor = {minor}
 patch = {patch}
 
 [phase]
-prefix = "-"
-name = "rc"
-delimiter = "-"
+separator = "-"
+name = "{phase_name}"
+delimiter = "."
 distance = {distance}
 
 [suffix]
 mode = "git_sha"
-delimiter = "+"
+separator = "+"
 
-{label}"#,
-        timestamp = timestamp_toml_section(),
-        label = label_toml_section(),
+[timestamp]
+format = "{TEST_TIMESTAMP_FORMAT}"
+last = "{last}"
+
+[label]
+position = "after-base"
+"#,
+        last = test_timestamp_last(),
     );
     fs::write(path, content).unwrap();
 }
 
-pub fn default_label() -> Label {
-    Label {
-        position: LabelPosition::BeforePhase,
-    }
+pub fn write_calver_config(path: &Path, version: (u32, u32, u32, u32)) {
+    let (year, month, day, distance) = version;
+    let content = format!(
+        r#"prefix = ""
+
+[base]
+mode = "calver"
+delimiter = "."
+major = {year}
+minor = {month}
+patch = {day}
+
+[phase]
+separator = "-"
+name = ""
+delimiter = "."
+distance = {distance}
+
+[suffix]
+mode = "git_sha"
+separator = "+"
+
+[timestamp]
+format = "{TEST_TIMESTAMP_FORMAT}"
+last = "{last}"
+
+[label]
+position = "after-base"
+"#,
+        last = test_timestamp_last(),
+    );
+    fs::write(path, content).unwrap();
 }
 
 pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: u32) -> Version {
     Version {
         path: PathBuf::from("test.toml"),
         timestamp: test_timestamp(),
+        prefix: prefix.to_string(),
         base: Base {
             mode: VersionMode::Semver,
-            prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             major,
             minor: Some(minor),
             patch: Some(patch),
         },
         phase: Phase {
-            prefix: "-".to_string(),
+            separator: "-".to_string(),
             name: if candidate > 0 {
                 "rc".to_string()
             } else {
@@ -223,7 +253,7 @@ pub fn make_semver(prefix: &str, major: u32, minor: u32, patch: u32, candidate: 
         },
         suffix: Suffix {
             mode: SuffixMode::GitSha,
-            delimiter: "+".to_string(),
+            separator: "+".to_string(),
         },
         label: default_label(),
     }
@@ -233,23 +263,23 @@ pub fn make_calver(prefix: &str) -> Version {
     Version {
         path: PathBuf::from("test.toml"),
         timestamp: test_timestamp(),
+        prefix: prefix.to_string(),
         base: Base {
             mode: VersionMode::Calver,
-            prefix: prefix.to_string(),
             delimiter: ".".to_string(),
             major: 2026,
             minor: Some(6),
             patch: Some(5),
         },
         phase: Phase {
-            prefix: "-".to_string(),
+            separator: "-".to_string(),
             name: String::new(),
             delimiter: "-".to_string(),
             distance: 0,
         },
         suffix: Suffix {
             mode: SuffixMode::GitSha,
-            delimiter: "+".to_string(),
+            separator: "+".to_string(),
         },
         label: default_label(),
     }

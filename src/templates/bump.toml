@@ -5,25 +5,22 @@
 #
 # https://github.com/launchfirestorm/bump
 
-[timestamp]
-format = "%Y-%m-%d %H:%M:%S %Z"   # strftime syntax, used in file generation
-last = "{timestamp}"
+prefix = "v"
 
 # NOTE: some fields are modified by bump
 #   - mode: "semver" or "calver"
 #   - minor|patch: optional, can be removed if not needed
 [base]
 mode = "semver"
-prefix = "v"
 delimiter = "."
 major = 0
 minor = 1
 patch = 0
 
 [phase]
-prefix = "-"
+separator = "-"
 name = ""
-delimiter = "-"
+delimiter = "."
 distance = 0
 
 # suffix type:
@@ -31,10 +28,15 @@ distance = 0
 #  - "branch"   : append the current git branch name
 [suffix]
 mode = "git_sha"
-delimiter = "+"
+separator = "+"
+
+[timestamp]
+format = "%Y-%m-%d %H:%M:%S %Z"
+last = "{timestamp}"
 
 # printed label: shown but never tracked, useful injecting dynamic values
-#  - position: "before-base", "after-base",
+#  - position: "before-prefix", "after-prefix",
+#              "before-base", "after-base",
 #              "before-phase", "after-phase",
 [label]
-position = "before-phase"
+position = "after-base"

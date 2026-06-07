@@ -65,7 +65,7 @@ fn output_fields(version: &Version) -> Result<OutputFields, BumpError> {
     Ok(OutputFields {
         version_string: print::to_string(version, PrintType::Regular)?,
         timestamp: version.timestamp.last.clone(),
-        prefix: version.base.prefix.clone(),
+        prefix: version.prefix.clone(),
         major: version.base.major,
         minor: version.base.minor.unwrap_or(0),
         patch: version.base.patch.unwrap_or(0),

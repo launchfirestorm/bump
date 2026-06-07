@@ -65,6 +65,8 @@ impl fmt::Display for SuffixMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LabelPosition {
+    BeforePrefix,
+    AfterPrefix,
     BeforeBase,
     AfterBase,
     BeforePhase,
@@ -74,6 +76,8 @@ pub enum LabelPosition {
 impl LabelPosition {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::BeforePrefix => "before-prefix",
+            Self::AfterPrefix => "after-prefix",
             Self::BeforeBase => "before-base",
             Self::AfterBase => "after-base",
             Self::BeforePhase => "before-phase",
@@ -91,7 +95,6 @@ pub struct Timestamp {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Base {
     pub mode: VersionMode,
-    pub prefix: String,
     pub delimiter: String,
 
     #[serde(alias = "year")]
@@ -108,7 +111,7 @@ pub struct Base {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Phase {
-    pub prefix: String,
+    pub separator: String,
     pub name: String,
     pub delimiter: String,
     pub distance: u32,
@@ -117,7 +120,7 @@ pub struct Phase {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Suffix {
     pub mode: SuffixMode,
-    pub delimiter: String,
+    pub separator: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +132,7 @@ pub struct Label {
 pub struct Version {
     #[serde(skip)]
     pub path: PathBuf,
+    pub prefix: String,
     pub timestamp: Timestamp,
     pub base: Base,
     pub phase: Phase,
@@ -207,7 +211,7 @@ impl Version {
 
         let version_parsed: Self = match toml::from_str(&content) {
             Ok(v) => {
-                let mut version: Self = v;
+                let mut version: Version = v;
                 version.path = path.to_path_buf();
                 version
             }
@@ -266,22 +270,18 @@ impl Version {
             .parse::<DocumentMut>()
             .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
 
+        doc["prefix"] = value(&self.prefix);
         doc["timestamp"]["format"] = value(&self.timestamp.format);
         doc["timestamp"]["last"] = value(&self.timestamp.last);
-
         doc["base"]["mode"] = value(self.base.mode.as_str());
-        doc["base"]["prefix"] = value(&self.base.prefix);
         doc["base"]["delimiter"] = value(&self.base.delimiter);
         self.base_remap(&mut doc);
-
-        doc["phase"]["prefix"] = value(&self.phase.prefix);
+        doc["phase"]["separator"] = value(&self.phase.separator);
         doc["phase"]["name"] = value(&self.phase.name);
         doc["phase"]["delimiter"] = value(&self.phase.delimiter);
         doc["phase"]["distance"] = value(i64::from(self.phase.distance));
-
         doc["suffix"]["mode"] = value(self.suffix.mode.as_str());
-        doc["suffix"]["delimiter"] = value(&self.suffix.delimiter);
-
+        doc["suffix"]["separator"] = value(&self.suffix.separator);
         doc["label"]["position"] = value(self.label.position.as_str());
 
         fs::write(self.path.as_path(), doc.to_string()).map_err(BumpError::IoError)
