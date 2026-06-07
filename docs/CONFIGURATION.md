@@ -2,7 +2,11 @@
 
 `bump` uses one unified TOML schema in `bump.toml` for both SemVer and CalVer.
 
-## BUMPFILE, can named anything default is `bump.toml`
+## BUMPFILE
+
+The BUMPFILE can be named anything; the default is `bump.toml`. Pass a different path
+as the positional `BUMPFILE` argument on any command.
+
 ```toml
 #  ____  __  __  __  __  ____ 
 # (  _ \(  )(  )(  \/  )(  _ \
@@ -14,16 +18,16 @@
 prefix = "v"
 
 # NOTE: some fields are modified by bump
-#   - mode: "semver" | "calver"
+#   - mode: "semver" or "calver"
 #   - minor|patch: optional, can be removed if not needed
 [base]
 mode = "semver"
 delimiter = "."
-major = 0  
+major = 0
 minor = 1
 patch = 0
 
-[phase]  
+[phase]
 separator = "-"
 name = ""
 delimiter = "."
@@ -53,6 +57,7 @@ position = "after-base"
 
 - Optional leading text printed before the numeric base (for example `v`).
 - Omitted from output with `bump print --no-prefix`.
+- Can be changed in place with `bump --prefix <PREFIX>` (persists to the bumpfile).
 
 ### `[timestamp]`
 
@@ -63,7 +68,7 @@ position = "after-base"
 
 - `mode`: `semver` or `calver`.
 - `delimiter`: separator for base components.
-- `major`, `minor`, `patch`: numeric components.
+- `major`, `minor`, `patch`: numeric components in SemVer mode.
 - `minor` and `patch` are optional.
 
 For compatibility, `year`, `month`, and `day` are accepted as aliases for
@@ -79,7 +84,9 @@ For compatibility, `year`, `month`, and `day` are accepted as aliases for
 ### `[suffix]`
 
 - `mode`: `git_sha` or `branch`.
-- `separator`: separator before the suffix payload.
+- `separator`: separator before the suffix payload (commonly `+`).
+- Requires a git repository when used with `bump print --with-suffix` or `bump print --full`.
+- Can be changed in place with `bump --suffix git_sha|branch` (persists to the bumpfile).
 
 ### `[label]`
 
@@ -95,13 +102,14 @@ For compatibility, `year`, `month`, and `day` are accepted as aliases for
 
 - Supported bump ops: `--major`, `--minor`, `--patch`, `--phase`.
 - `--calendar` is rejected.
+- `--major`, `--minor`, and `--patch` clear the phase (promotion).
 - Base format is `<major><delimiter><minor><delimiter><patch>`.
 
 ### CalVer mode
 
 - Supported bump ops: `--calendar`, `--phase`.
 - `--major`, `--minor`, and `--patch` are rejected.
-- Month/day values are printed with zero padding in base output.
+- Month and day values are printed with zero padding in base output.
 
 ## Key Remapping Rules
 
@@ -115,11 +123,16 @@ Additional safety behavior:
 - If `mode = "semver"` but the file contains `year/month/day`, a warning is
   emitted and keys are rewritten on save.
 
-## Print Output Modes
+## Print Output
 
-Use the `print` subcommand. Flags are stackable except `--only-*` and `--full`:
+Use the `print` subcommand (alias `p`). Flags are stackable except `--only-*`
+and `--full`. All variants emit output **without a trailing newline**.
 
-```bash
+Default assembly order: `[prefix][base][phase]`, with optional label injection
+at `[label].position`. When `--with-timestamp` or `--full` is used, the timestamp
+is appended after **two spaces**.
+
+```text
 Print [prefix][base][phase] from BUMPFILE without newline
 
 Usage: bump print [OPTIONS] [BUMPFILE]
@@ -128,16 +141,23 @@ Arguments:
   [BUMPFILE]  Path to the configuration file [default: bump.toml]
 
 Options:
-      --only-prefix     Print [prefix] only
-      --only-phase      Print [phase] only
-      --only-base       Print [base] only
-      --no-prefix       Omit [prefix]
-      --no-phase        Omit [phase]
-      --with-suffix     Append [suffix]
-      --with-timestamp  Append [timestamp]
-      --with-label      Inject LABEL at [label].position (not persisted)
-      --full            Print full output; overrides all flags except --with-label
-  -h, --help            Print help
+      --only-prefix         Print [prefix]
+      --only-phase          Print [phase]
+      --only-base           Print [base]
+      --no-prefix           Print [base][phase]
+      --no-phase            Print [prefix][base]
+      --with-suffix         Print [prefix][base][phase][suffix]
+      --with-timestamp      Print [prefix][base][phase][timestamp]
+      --full                Print full output; overrides all print flags except --with-label
+      --with-label <LABEL>  Inject LABEL at [label].position (not persisted)
+  -h, --help                Print help
 ```
 
-All print variants emit output without a trailing newline.
+`--full` produces `[prefix][base][phase][suffix]  [timestamp]` (suffix and
+timestamp require a git repository for suffix resolution).
+
+## See Also
+
+- [README](../README.md) — command overview and quick start
+- [Workflow Guide](WORKFLOW.md) — release and CI examples
+- [Contributing Guide](CONTRIBUTING.md) — build from source and run integration tests

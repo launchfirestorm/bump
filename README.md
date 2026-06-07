@@ -6,24 +6,24 @@
 ```
 # `bump` automatic versioning
 
-> An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration and multi-language code generation. No assumption is made, you `bump` when you want, how you want.
+> An un-opinionated command-line tool for **SemVer** and **CalVer** management with TOML-based configuration and multi-language code generation. No assumption is made — you `bump` when you want, how you want.
 
 ### TL;DR
 - A **regex-less** way to do versioning 😎
 - Human/Machine readable `bump.toml`
 - Flexible for your needs
-- There stop thinking about versioning!
+- Then stop thinking about versioning!
 
 
 ## Why?
-I got tired of bespoke scripts and tons of regex parsing that differentiated slightly from repo to repo just to bump versions. So I created `bump` to be _dead simple_ and **without opinion**. Everyone wants to version differently and that's okay, with a sprinkling of convention and a large helping of automation this tool allows you to never have to worry about versions again!
+I got tired of bespoke scripts and tons of regex parsing that differentiated slightly from repo to repo just to bump versions. So I created `bump` to be _dead simple_ and **without opinion**. Everyone wants to version differently and that's okay — with a sprinkling of convention and a large helping of automation this tool allows you to never have to worry about versions again!
 
 
 ## Installation
 
 **Linux, macOS, or WSL:**
 
-> ensure you have write permissions to `/usr/local/bin/`, if you need elevation then `... | sudo bash`
+> Ensure you have write permissions to `/usr/local/bin/`; if you need elevation, pipe through `sudo bash`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | bash
@@ -44,7 +44,7 @@ irm https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump
 bump init
 ```
 
-This creates a **"BUMPFILE"** defaulted to `bump.toml` in your current directory with sensible defaults. You can rename this to how you want.
+This creates a **BUMPFILE** (default `bump.toml`) in your current directory with sensible defaults. You can rename it to whatever you like.
 
 To use CalVer, set `mode = "calver"` under `[base]` in your bumpfile.
 
@@ -52,12 +52,13 @@ To use CalVer, set `mode = "calver"` under `[base]` in your bumpfile.
 
 ### Reporting Commands
 
-> Often times is getting the version _in other tools_ is the problem. 
-> All print variants write output **without a trailing newline**.
+> Often the hard part is getting the version _into other tools_.
+> All `print` variants write output **without a trailing newline**.
 
 ```bash
 # Default print ([prefix][base][phase])
 bump print [BUMPFILE]
+bump p [BUMPFILE]              # alias
 
 # Print variants
 bump print --only-prefix [BUMPFILE]
@@ -73,6 +74,8 @@ bump print --full [BUMPFILE]
 # Stackable (e.g. omit prefix and include suffix)
 bump print --no-prefix --with-suffix [BUMPFILE]
 ```
+
+Suffix output (`--with-suffix`, `--full`) requires a git repository.
 
 ### PRO TIP: you can inject bump _everywhere_
 ```bash
@@ -91,18 +94,16 @@ project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
 
 ### SemVer Commands
 
-> in combining semver and calver ideas both learned from each other.
->  
-
 ```bash
 # Bump version numbers (updates BUMPFILE)
-bump --major     # 1.0.0 -> 2.0.0
-bump --minor     # 1.0.0 -> 1.1.0  
-bump --patch     # 1.0.0 -> 1.0.1
+bump --major     # 1.0.0 -> 2.0.0, clears phase
+bump --minor     # 1.0.0 -> 1.1.0, clears phase
+bump --patch     # 1.0.0 -> 1.0.1, clears phase
 
-# phase workflow
+# Phase workflow
 bump --phase alpha  # 1.1.0 -> 1.1.0-alpha.1
 bump --phase        # increment phase distance, e.g. 1.1.0-alpha.2
+bump --phase beta   # switch phase, e.g. 1.1.0-beta.1
 ```
 
 ### CalVer Commands
@@ -111,6 +112,15 @@ bump --phase        # increment phase distance, e.g. 1.1.0-alpha.2
 # Set [base].mode = "calver" in BUMPFILE, then:
 bump --calendar [BUMPFILE]  # Updates to current date (e.g., 2026.02.25)
 # Same-day bumps automatically increment phase distance
+```
+
+### Bumpfile Meta Flags
+
+Update bumpfile fields without a formal version bump:
+
+```bash
+bump --prefix v2-
+bump --suffix branch
 ```
 
 ## Recommended Workflow (v7)
@@ -162,7 +172,7 @@ bump gen --lang c --output version.h custom.toml
 ### Git Integration
 
 ```bash
-# Create a git tag for the current version, message is conventional commit format that adds the version
+# Create a git tag for the current version (conventional commit message by default)
 bump tag [BUMPFILE]
 
 # Create a tag with custom message
@@ -171,7 +181,7 @@ bump tag -m "Custom message" [BUMPFILE]
 
 ### `bump update`
 
-> Currently supports `Cargo.toml` and `pyproject.toml`, send a PR for additional file format conventions!
+> Currently supports `Cargo.toml` and `pyproject.toml` — send a PR for additional file format conventions!
 
 ```bash
 bump update Cargo.toml [BUMPFILE]
@@ -181,19 +191,19 @@ bump update pyproject.toml [BUMPFILE]
 
 ## Documentation
 
-- **[Configuration Reference](docs/CONFIGURATION.md)** - Detailed configuration options for SemVer and CalVer
-- **[Contributing Guide](docs/CONTRIBUTING.md)** - Build from source and development instructions
-- **[Workflow Guide](docs/WORKFLOW.md)** - Use `bump` to automate you pipelines!
+- **[Configuration Reference](docs/CONFIGURATION.md)** — bumpfile schema, print flags, and mode behavior
+- **[Workflow Guide](docs/WORKFLOW.md)** — release pipelines, phases, labels, and CI examples
+- **[Contributing Guide](docs/CONTRIBUTING.md)** — build from source, run integration tests, and project layout
 
-## **GitHub Actions:** 
+## GitHub Actions
 
-composite action `action.yml` at repo root installs bump for the job’s OS/arch:
+The composite action `action.yml` at the repo root installs bump for the job's OS/arch:
 
 ```yaml
 - uses: launchfirestorm/bump@v7
 ```
 
-if your token differs from the default `GITHUB_TOKEN`
+If your token differs from the default `GITHUB_TOKEN`:
 
 ```yaml
 - uses: launchfirestorm/bump@v7
