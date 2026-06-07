@@ -63,7 +63,7 @@ struct OutputFields {
 
 fn output_fields(version: &Version) -> Result<OutputFields, BumpError> {
     Ok(OutputFields {
-        version_string: print::to_string(version, &PrintType::Regular)?,
+        version_string: print::to_string(version, PrintType::Regular)?,
         timestamp: version.timestamp.last.clone(),
         prefix: version.base.prefix.clone(),
         major: version.base.major,

@@ -142,7 +142,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         println!(
             "bumped {} to {}",
             version.path.display(),
-            print::to_string(&version, &PrintType::WithTimestamp)?
+            print::to_string(&version, PrintType::WithTimestamp)?
         );
     }
 
@@ -237,7 +237,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 
-    let tag_name = print::to_string(version, &PrintType::Regular)?;
+    let tag_name = print::to_string(version, PrintType::Regular)?;
 
     if git_tag_exists(&tag_name)? {
         return Err(BumpError::Git(format!("Tag '{tag_name}' already exists")));

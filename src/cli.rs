@@ -93,35 +93,30 @@ pub fn cli() -> Command {
                 Arg::new("no-prefix")
                     .long("no-prefix")
                     .action(clap::ArgAction::SetTrue)
-                    .group("print-stackable")
                     .help("Print [base][phase]"),
             )
             .arg(
                 Arg::new("no-phase")
                     .long("no-phase")
                     .action(clap::ArgAction::SetTrue)
-                    .group("print-stackable")
                     .help("Print [prefix][base]"),
             )
             .arg(
                 Arg::new("with-suffix")
                     .long("with-suffix")
                     .action(clap::ArgAction::SetTrue)
-                    .group("print-stackable")
                     .help("Print [prefix][base][phase][suffix]"),
             )
             .arg(
                 Arg::new("with-timestamp")
                     .long("with-timestamp")
                     .action(clap::ArgAction::SetTrue)
-                    .group("print-stackable")
                     .help("Print [prefix][base][phase][timestamp]"),
             )
             .arg(
                 Arg::new("full")
                     .long("full")
                     .action(clap::ArgAction::SetTrue)
-                    .group("print-stackable")
                     .help("Print full output; overrides all print flags except --with-label"),
             )
             .arg(
@@ -130,7 +125,6 @@ pub fn cli() -> Command {
                     .value_name("LABEL")
                     .value_parser(clap::value_parser!(String))
                     .num_args(1)
-                    .group("print-stackable")
                     .help("Inject LABEL at [label].position (not persisted)"),
             )
         )
