@@ -8,21 +8,6 @@ use std::{
     process::Command as ProcessCommand,
 };
 
-#[cfg(test)]
-use std::cell::RefCell;
-
-#[cfg(test)]
-thread_local! {
-    /// Test-only: allows tests to override the git repository path without changing CWD
-    static TEST_REPO_PATH: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
-}
-
-#[cfg(test)]
-/// Test-only: Set the repository path for git operations in this thread
-pub fn set_test_repo_path(path: Option<PathBuf>) {
-    TEST_REPO_PATH.with(|p| *p.borrow_mut() = path);
-}
-
 pub enum BumpType {
     Major,
     Minor,
@@ -154,18 +139,6 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
 }
 
 fn git_cmd() -> ProcessCommand {
-    #[cfg(test)]
-    {
-        let mut cmd = ProcessCommand::new("git");
-        TEST_REPO_PATH.with(|p| {
-            if let Some(ref path) = *p.borrow() {
-                cmd.arg("-C").arg(path);
-            }
-        });
-        cmd
-    }
-
-    #[cfg(not(test))]
     ProcessCommand::new("git")
 }
 

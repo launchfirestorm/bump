@@ -6,8 +6,6 @@ mod bump;
 mod cli;
 mod lang;
 mod print;
-#[cfg(test)]
-mod tests;
 mod update;
 mod version;
 

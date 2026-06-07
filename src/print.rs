@@ -251,12 +251,6 @@ pub fn run(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
-#[cfg(test)]
-pub fn format(version: &Version, opts: &PrintOptions) -> Result<String, BumpError> {
-    let mut components = Components::from(version, opts)?;
-    assemble(version, opts, &mut components)
-}
-
 pub fn to_string(version: &Version, print_type: PrintType) -> Result<String, BumpError> {
     let opts = print_type.options();
     let mut components = Components::from(version, &opts)?;
