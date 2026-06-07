@@ -16,8 +16,10 @@ LABEL_POSITIONS=(
     after-phase
 )
 
+BUMP_BIN="${BUMP_BIN:-$ROOT/target/release/bump}"
+
 bump() {
-    "$ROOT/target/release/bump" "$@"
+    "$BUMP_BIN" "$@"
 }
 
 assert_eq() {
