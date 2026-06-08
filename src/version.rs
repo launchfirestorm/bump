@@ -168,13 +168,16 @@ impl Version {
             .parse::<DocumentMut>()
             .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
 
-        let base = doc["base"].as_table().ok_or_else(|| {
-            BumpError::ParseError(format!(
-                "'base' table not found in {}. \
+        let base = doc
+            .get("base")
+            .and_then(|item| item.as_table())
+            .ok_or_else(|| {
+                BumpError::ParseError(format!(
+                    "'base' table not found in {}. \
                 Recreate your bumpfile with 'bump init'.",
-                path.display()
-            ))
-        })?;
+                    path.display()
+                ))
+            })?;
 
         let mode = base
             .get("mode")
