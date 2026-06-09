@@ -102,6 +102,13 @@ check_dependencies() {
 }
 
 install_bump() {
+  # Skip download if bump is already installed (e.g. baked into container image)
+  if command -v bump >/dev/null 2>&1; then
+    info "bump already installed at $(command -v bump) ($(bump --version 2>/dev/null || echo 'unknown version'))"
+    TARGET_PATH="$(command -v bump)"
+    return 0
+  fi
+
   local asset_name temp_file tag_name download_url target_path
 
   case "$OS" in
@@ -131,8 +138,10 @@ install_bump() {
   if [[ ! -d "$INSTALL_DIR" ]]; then
     if [[ -w "$(dirname "$INSTALL_DIR")" ]]; then
       mkdir -p "$INSTALL_DIR" || error "Failed to create ${INSTALL_DIR}"
-    else
+    elif command -v sudo >/dev/null 2>&1; then
       sudo mkdir -p "$INSTALL_DIR" || error "Failed to create ${INSTALL_DIR} (try with sudo)"
+    else
+      error "Cannot create ${INSTALL_DIR} — not writable and sudo not available"
     fi
   fi
 
@@ -140,8 +149,10 @@ install_bump() {
 
   if [[ -w "$INSTALL_DIR" ]]; then
     mv "$temp_file" "$target_path" || error "Failed to install to ${target_path}"
-  else
+  elif command -v sudo >/dev/null 2>&1; then
     sudo mv "$temp_file" "$target_path" || error "Failed to install to ${target_path} (try with sudo)"
+  else
+    error "Cannot install to ${target_path} — not writable and sudo not available"
   fi
 
   TARGET_PATH="$target_path"
