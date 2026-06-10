@@ -1,5 +1,5 @@
 use crate::{
-    bump::{BumpError, resolve_path},
+    bump::{BumpError, load_bumpfile, resolve_path},
     print::{self, PrintType},
     version::Version,
 };
@@ -36,8 +36,8 @@ fn set_toml_field(
 
 /// Update a file with the version from the bumpfile
 pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let bumpfile = load_bumpfile(matches)?;
+    let version = bumpfile.version()?;
     let path_str = matches.get_one::<String>("path").ok_or_else(|| {
         BumpError::IoError(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

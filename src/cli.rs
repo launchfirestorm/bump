@@ -134,6 +134,7 @@ pub fn cli() -> Command {
                 .long("prefix")
                 .value_name("PREFIX")
                 .value_parser(clap::value_parser!(String))
+                .allow_hyphen_values(true)
                 .num_args(1)
                 .help("Set prefix string (i.e: 'v', 'release-')")
         )

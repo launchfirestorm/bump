@@ -3,6 +3,7 @@ use crate::lang::Language;
 use std::process::ExitCode;
 
 mod bump;
+mod bumpfile;
 mod cli;
 mod lang;
 mod print;

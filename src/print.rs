@@ -1,5 +1,5 @@
 use crate::bump::{
-    BumpError, get_git_branch, get_git_commit_sha, is_git_repository, resolve_path,
+    BumpError, get_git_branch, get_git_commit_sha, is_git_repository, load_bumpfile,
 };
 use crate::version::{LabelPosition, SuffixMode, Version, VersionMode};
 use clap::ArgMatches;
@@ -243,8 +243,8 @@ impl Components {
 }
 
 pub fn run(matches: &ArgMatches) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let bumpfile = load_bumpfile(matches)?;
+    let version = bumpfile.version()?;
     let opts = PrintOptions::parse(matches)?;
     let mut components = Components::from(&version, &opts)?;
     print!("{}", assemble(&version, &opts, &mut components)?);
