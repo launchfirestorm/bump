@@ -36,17 +36,6 @@ fn table_mut<'a>(
         .ok_or_else(|| bumpfile_parse_error(path, format!("'{section}' table not found")))
 }
 
-fn require_key(table: &Table, key: &str, section: &str, path: &Path) -> Result<(), BumpError> {
-    if table.contains_key(key) {
-        Ok(())
-    } else {
-        Err(bumpfile_parse_error(
-            path,
-            format!("Expected key '{key}' not found in [{section}]"),
-        ))
-    }
-}
-
 fn set<V: Into<Value>>(
     table: &mut Table,
     key: &str,
@@ -54,17 +43,34 @@ fn set<V: Into<Value>>(
     section: &str,
     path: &Path,
 ) -> Result<(), BumpError> {
-    require_key(table, key, section, path)?;
+    if !table.contains_key(key) {
+        return Err(bumpfile_parse_error(
+            path,
+            format!("Expected key '{key}' not found in [{section}]"),
+        ));
+    }
     table[key] = value(val);
     Ok(())
 }
 
-fn warn_mode_key_mismatch(path: &Path, content: &str) -> Result<(), BumpError> {
-    let doc = content
-        .parse::<DocumentMut>()
-        .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
+fn set_or_remove(
+    table: &mut Table,
+    key: &str,
+    val: Option<u32>,
+    section: &str,
+    path: &Path,
+) -> Result<(), BumpError> {
+    match val {
+        Some(n) => set(table, key, i64::from(n), section, path),
+        None => {
+            table.remove(key);
+            Ok(())
+        }
+    }
+}
 
-    let base = table(&doc, "base", path)?;
+fn warn_mode_key_mismatch(path: &Path, doc: &DocumentMut) -> Result<(), BumpError> {
+    let base = table(doc, "base", path)?;
 
     let mode = base
         .get("mode")
@@ -101,20 +107,10 @@ fn write_base(doc: &mut DocumentMut, version: &Version, path: &Path) -> Result<(
     set(base, major_key, i64::from(version.base.major), "base", path)?;
     base.remove(old_major);
 
-    match version.base.minor {
-        Some(minor) => set(base, minor_key, i64::from(minor), "base", path)?,
-        None => {
-            base.remove(minor_key);
-        }
-    }
+    set_or_remove(base, minor_key, version.base.minor, "base", path)?;
     base.remove(old_minor);
 
-    match version.base.patch {
-        Some(patch) => set(base, patch_key, i64::from(patch), "base", path)?,
-        None => {
-            base.remove(patch_key);
-        }
-    }
+    set_or_remove(base, patch_key, version.base.patch, "base", path)?;
     base.remove(old_patch);
 
     Ok(())
@@ -125,7 +121,12 @@ fn write_version_into_doc(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    require_key(doc, "prefix", "(root)", path)?;
+    if !doc.contains_key("prefix") {
+        return Err(bumpfile_parse_error(
+            path,
+            "Expected key 'prefix' not found in [(root)]",
+        ));
+    }
     doc["prefix"] = value(&version.prefix);
 
     let timestamp = table_mut(doc, "timestamp", path)?;
@@ -194,11 +195,11 @@ impl BumpFile {
             }
         })?;
 
-        warn_mode_key_mismatch(path, &content)?;
-
         let doc = content
             .parse::<DocumentMut>()
             .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
+
+        warn_mode_key_mismatch(path, &doc)?;
 
         Ok(Self {
             path: path.to_path_buf(),
@@ -210,16 +211,15 @@ impl BumpFile {
         let path = path.as_ref();
         ensure_directory_exists(path)?;
 
+        let template = include_str!("templates/bump.toml");
         let template_version: Version = {
-            let content =
-                include_str!("templates/bump.toml").replace("{timestamp}", INIT_TEMPLATE_TIMESTAMP);
+            let content = template.replace("{timestamp}", INIT_TEMPLATE_TIMESTAMP);
             toml::from_str(&content).expect("init template must deserialize")
         };
         let current_timestamp = chrono::Utc::now()
             .format(&template_version.timestamp.format)
             .to_string();
-        let content =
-            include_str!("templates/bump.toml").replace("{timestamp}", &current_timestamp);
+        let content = template.replace("{timestamp}", &current_timestamp);
 
         fs::write(path, &content).map_err(BumpError::IoError)?;
         let doc = content
@@ -249,13 +249,5 @@ impl BumpFile {
     pub fn save(&mut self, version: &Version) -> Result<(), BumpError> {
         write_version_into_doc(&mut self.doc, version, &self.path)?;
         fs::write(&self.path, self.doc.to_string()).map_err(BumpError::IoError)
-    }
-}
-
-impl TryFrom<&Path> for BumpFile {
-    type Error = BumpError;
-
-    fn try_from(path: &Path) -> Result<Self, Self::Error> {
-        Self::load(path)
     }
 }

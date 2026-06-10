@@ -6,8 +6,7 @@ set -euo pipefail
 # Tier 1: workflow sections with full print-flag permutations (single label position).
 # Tier 2: all six label slots with focused label-placement assertions.
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+source "$(dirname "$0")/lib.sh"
 
 PREFIX="v-"
 LABEL="DEV-CI"
@@ -22,12 +21,6 @@ LABEL_POSITIONS=(
     before-phase
     after-phase
 )
-
-BUMP_BIN="${BUMP_BIN:-$ROOT/target/release/bump}"
-
-bump() {
-    "$BUMP_BIN" "$@"
-}
 
 assert_eq() {
     local name="$1"
