@@ -1,6 +1,6 @@
 use crate::bumpfile::BumpFile;
 use crate::lang::{self, Language};
-use crate::print::{self, PrintType};
+use crate::print::{self, PrintOptions};
 use crate::version::Version;
 use clap::ArgMatches;
 use std::{
@@ -127,7 +127,7 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         println!(
             "bumped {} to {}",
             bumpfile.path().display(),
-            print::to_string(&version, PrintType::WithTimestamp)?
+            print::to_string(&version, &PrintOptions::with_timestamp())?
         );
     }
 
@@ -210,7 +210,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 
-    let tag_name = print::to_string(version, PrintType::Regular)?;
+    let tag_name = print::to_string(version, &PrintOptions::default())?;
 
     if git_tag_exists(&tag_name)? {
         return Err(BumpError::Git(format!("Tag '{tag_name}' already exists")));

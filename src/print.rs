@@ -42,42 +42,18 @@ impl PrintOptions {
         }
         Ok(opts)
     }
-}
 
-#[allow(dead_code)]
-pub enum PrintType {
-    NoPrefix,
-    NoPhase,
-    Regular,
-    WithSuffix,
-    WithTimestamp,
-    Full,
-}
+    pub fn no_prefix() -> Self {
+        Self {
+            no_prefix: true,
+            ..Self::default()
+        }
+    }
 
-impl PrintType {
-    fn options(self) -> PrintOptions {
-        match self {
-            Self::Regular => PrintOptions::default(),
-            Self::NoPrefix => PrintOptions {
-                no_prefix: true,
-                ..Default::default()
-            },
-            Self::NoPhase => PrintOptions {
-                no_phase: true,
-                ..Default::default()
-            },
-            Self::WithSuffix => PrintOptions {
-                with_suffix: true,
-                ..Default::default()
-            },
-            Self::WithTimestamp => PrintOptions {
-                with_timestamp: true,
-                ..Default::default()
-            },
-            Self::Full => PrintOptions {
-                full: true,
-                ..Default::default()
-            },
+    pub fn with_timestamp() -> Self {
+        Self {
+            with_timestamp: true,
+            ..Self::default()
         }
     }
 }
@@ -251,10 +227,9 @@ pub fn run(matches: &ArgMatches) -> Result<(), BumpError> {
     Ok(())
 }
 
-pub fn to_string(version: &Version, print_type: PrintType) -> Result<String, BumpError> {
-    let opts = print_type.options();
-    let mut components = Components::from(version, &opts)?;
-    assemble(version, &opts, &mut components)
+pub fn to_string(version: &Version, opts: &PrintOptions) -> Result<String, BumpError> {
+    let mut components = Components::from(version, opts)?;
+    assemble(version, opts, &mut components)
 }
 
 pub fn assemble(

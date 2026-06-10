@@ -1,5 +1,5 @@
 use crate::bump::BumpError;
-use crate::print::{self, PrintType};
+use crate::print::{self, PrintOptions};
 use crate::version::{Version, VersionMode};
 use std::fs;
 use std::path::Path;
@@ -63,7 +63,7 @@ struct OutputFields {
 
 fn output_fields(version: &Version) -> Result<OutputFields, BumpError> {
     Ok(OutputFields {
-        version_string: print::to_string(version, PrintType::Regular)?,
+        version_string: print::to_string(version, &PrintOptions::default())?,
         timestamp: version.timestamp.last.clone(),
         prefix: version.prefix.clone(),
         major: version.base.major,

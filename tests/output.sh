@@ -9,8 +9,8 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 PREFIX="v-"
-LABEL="DEV-CI"
-PHASE_NAMED="pre-release"
+LABEL="-tiger"
+PHASE_NAMED=".big.cat"
 DEFAULT_LABEL_POSITION="after-base"
 
 LABEL_POSITIONS=(
