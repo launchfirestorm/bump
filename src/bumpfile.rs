@@ -4,7 +4,7 @@ use std::{
     fmt, fs, io,
     path::{Path, PathBuf},
 };
-use toml_edit::{DocumentMut, Table, value};
+use toml_edit::{DocumentMut, Table, Value, value};
 
 const INIT_TEMPLATE_TIMESTAMP: &str = "1970-01-01 00:00:00 UTC";
 
@@ -47,28 +47,10 @@ fn require_key(table: &Table, key: &str, section: &str, path: &Path) -> Result<(
     }
 }
 
-fn set_top_str(doc: &mut DocumentMut, key: &str, val: &str, path: &Path) -> Result<(), BumpError> {
-    require_key(doc, key, "(root)", path)?;
-    doc[key] = value(val);
-    Ok(())
-}
-
-fn set_str(
+fn set<V: Into<Value>>(
     table: &mut Table,
     key: &str,
-    val: &str,
-    section: &str,
-    path: &Path,
-) -> Result<(), BumpError> {
-    require_key(table, key, section, path)?;
-    table[key] = value(val);
-    Ok(())
-}
-
-fn set_i64(
-    table: &mut Table,
-    key: &str,
-    val: i64,
+    val: V,
     section: &str,
     path: &Path,
 ) -> Result<(), BumpError> {
@@ -103,32 +85,11 @@ fn warn_mode_key_mismatch(path: &Path, content: &str) -> Result<(), BumpError> {
     Ok(())
 }
 
-fn read_doc(path: &Path) -> Result<(PathBuf, DocumentMut), BumpError> {
-    let content = fs::read_to_string(path).map_err(|err| {
-        if err.kind() == io::ErrorKind::NotFound {
-            BumpError::LogicError(format!(
-                "Configuration file not found at '{}'. Create one with 'bump init'",
-                path.display()
-            ))
-        } else {
-            BumpError::IoError(err)
-        }
-    })?;
-
-    warn_mode_key_mismatch(path, &content)?;
-
-    let doc = content
-        .parse::<DocumentMut>()
-        .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
-
-    Ok((path.to_path_buf(), doc))
-}
-
 fn write_base(doc: &mut DocumentMut, version: &Version, path: &Path) -> Result<(), BumpError> {
     let base = table_mut(doc, "base", path)?;
 
-    set_str(base, "mode", version.base.mode.as_str(), "base", path)?;
-    set_str(base, "delimiter", &version.base.delimiter, "base", path)?;
+    set(base, "mode", version.base.mode.as_str(), "base", path)?;
+    set(base, "delimiter", &version.base.delimiter, "base", path)?;
 
     let (major_key, minor_key, patch_key, old_major, old_minor, old_patch) =
         if version.base.mode == VersionMode::Calver {
@@ -137,11 +98,11 @@ fn write_base(doc: &mut DocumentMut, version: &Version, path: &Path) -> Result<(
             ("major", "minor", "patch", "year", "month", "day")
         };
 
-    set_i64(base, major_key, i64::from(version.base.major), "base", path)?;
+    set(base, major_key, i64::from(version.base.major), "base", path)?;
     base.remove(old_major);
 
     match version.base.minor {
-        Some(minor) => set_i64(base, minor_key, i64::from(minor), "base", path)?,
+        Some(minor) => set(base, minor_key, i64::from(minor), "base", path)?,
         None => {
             base.remove(minor_key);
         }
@@ -149,7 +110,7 @@ fn write_base(doc: &mut DocumentMut, version: &Version, path: &Path) -> Result<(
     base.remove(old_minor);
 
     match version.base.patch {
-        Some(patch) => set_i64(base, patch_key, i64::from(patch), "base", path)?,
+        Some(patch) => set(base, patch_key, i64::from(patch), "base", path)?,
         None => {
             base.remove(patch_key);
         }
@@ -164,17 +125,18 @@ fn write_version_into_doc(
     version: &Version,
     path: &Path,
 ) -> Result<(), BumpError> {
-    set_top_str(doc, "prefix", &version.prefix, path)?;
+    require_key(doc, "prefix", "(root)", path)?;
+    doc["prefix"] = value(&version.prefix);
 
     let timestamp = table_mut(doc, "timestamp", path)?;
-    set_str(
+    set(
         timestamp,
         "format",
         &version.timestamp.format,
         "timestamp",
         path,
     )?;
-    set_str(
+    set(
         timestamp,
         "last",
         &version.timestamp.last,
@@ -185,10 +147,10 @@ fn write_version_into_doc(
     write_base(doc, version, path)?;
 
     let phase = table_mut(doc, "phase", path)?;
-    set_str(phase, "separator", &version.phase.separator, "phase", path)?;
-    set_str(phase, "name", &version.phase.name, "phase", path)?;
-    set_str(phase, "delimiter", &version.phase.delimiter, "phase", path)?;
-    set_i64(
+    set(phase, "separator", &version.phase.separator, "phase", path)?;
+    set(phase, "name", &version.phase.name, "phase", path)?;
+    set(phase, "delimiter", &version.phase.delimiter, "phase", path)?;
+    set(
         phase,
         "distance",
         i64::from(version.phase.distance),
@@ -197,8 +159,8 @@ fn write_version_into_doc(
     )?;
 
     let suffix = table_mut(doc, "suffix", path)?;
-    set_str(suffix, "mode", version.suffix.mode.as_str(), "suffix", path)?;
-    set_str(
+    set(suffix, "mode", version.suffix.mode.as_str(), "suffix", path)?;
+    set(
         suffix,
         "separator",
         &version.suffix.separator,
@@ -207,7 +169,7 @@ fn write_version_into_doc(
     )?;
 
     let label = table_mut(doc, "label", path)?;
-    set_str(
+    set(
         label,
         "position",
         version.label.position.as_str(),
@@ -220,8 +182,28 @@ fn write_version_into_doc(
 
 impl BumpFile {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, BumpError> {
-        let (path, doc) = read_doc(path.as_ref())?;
-        Ok(Self { path, doc })
+        let path = path.as_ref();
+        let content = fs::read_to_string(path).map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                BumpError::LogicError(format!(
+                    "Configuration file not found at '{}'. Create one with 'bump init'",
+                    path.display()
+                ))
+            } else {
+                BumpError::IoError(err)
+            }
+        })?;
+
+        warn_mode_key_mismatch(path, &content)?;
+
+        let doc = content
+            .parse::<DocumentMut>()
+            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
+
+        Ok(Self {
+            path: path.to_path_buf(),
+            doc,
+        })
     }
 
     pub fn create(path: impl AsRef<Path>) -> Result<Self, BumpError> {
