@@ -231,9 +231,13 @@ impl Version {
         Ok(version_parsed)
     }
 
-    fn base_remap(&self, doc: &mut DocumentMut) {
+    fn base_remap(&self, doc: &mut DocumentMut) -> Result<(), BumpError> {
         let Some(base_table) = doc["base"].as_table_mut() else {
-            return;
+            return Err(BumpError::ParseError(format!(
+                "'base' table not found in {}. \
+                Recreate your bumpfile with 'bump init'.",
+                self.path.display()
+            )));
         };
 
         let (major_key, minor_key, patch_key, old_major, old_minor, old_patch) =
@@ -242,6 +246,15 @@ impl Version {
             } else {
                 ("major", "minor", "patch", "year", "month", "day")
             };
+
+        // base_table.get(major_key).ok_or_else(|| {
+        //     BumpError::ParseError(format!(
+        //         "Expected key '{}' not found in [base] table of {}. \
+        //         Recreate your bumpfile with 'bump init'.",
+        //         major_key,
+        //         self.path.display()
+        //     ))
+        // })?;
 
         base_table[major_key] = value(i64::from(self.base.major));
         base_table.remove(old_major);

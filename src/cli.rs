@@ -123,6 +123,7 @@ pub fn cli() -> Command {
                 Arg::new("with-label")
                     .long("with-label")
                     .value_name("LABEL")
+                    .allow_hyphen_values(true)
                     .value_parser(clap::value_parser!(String))
                     .num_args(1)
                     .help("Inject LABEL at [label].position (not persisted)"),
