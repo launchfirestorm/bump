@@ -56,7 +56,9 @@ jobs:
       if: matrix.cross_compile == false && matrix.os != 'windows-latest'
       env:
         BUMP_BIN: target/${{ matrix.target }}/release/bump
-      run: tests/output.sh
+      run: |
+        ./tests/output.sh
+        ./tests/malformed.sh
 
     - name: Prepare binary for upload
       shell: bash

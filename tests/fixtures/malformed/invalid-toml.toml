@@ -1,0 +1,6 @@
+prefix = "v"
+
+[base]
+mode = "semver"
+major = 0
+minor = unclosed string

@@ -1,5 +1,5 @@
 use crate::bump::{
-    BumpError, get_git_branch, get_git_commit_sha, is_git_repository, resolve_path,
+    BumpError, get_git_branch, get_git_commit_sha, is_git_repository, load_bumpfile,
 };
 use crate::version::{LabelPosition, SuffixMode, Version, VersionMode};
 use clap::ArgMatches;
@@ -42,42 +42,18 @@ impl PrintOptions {
         }
         Ok(opts)
     }
-}
 
-#[allow(dead_code)]
-pub enum PrintType {
-    NoPrefix,
-    NoPhase,
-    Regular,
-    WithSuffix,
-    WithTimestamp,
-    Full,
-}
+    pub fn no_prefix() -> Self {
+        Self {
+            no_prefix: true,
+            ..Self::default()
+        }
+    }
 
-impl PrintType {
-    fn options(self) -> PrintOptions {
-        match self {
-            Self::Regular => PrintOptions::default(),
-            Self::NoPrefix => PrintOptions {
-                no_prefix: true,
-                ..Default::default()
-            },
-            Self::NoPhase => PrintOptions {
-                no_phase: true,
-                ..Default::default()
-            },
-            Self::WithSuffix => PrintOptions {
-                with_suffix: true,
-                ..Default::default()
-            },
-            Self::WithTimestamp => PrintOptions {
-                with_timestamp: true,
-                ..Default::default()
-            },
-            Self::Full => PrintOptions {
-                full: true,
-                ..Default::default()
-            },
+    pub fn with_timestamp() -> Self {
+        Self {
+            with_timestamp: true,
+            ..Self::default()
         }
     }
 }
@@ -243,18 +219,17 @@ impl Components {
 }
 
 pub fn run(matches: &ArgMatches) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let bumpfile = load_bumpfile(matches)?;
+    let version = bumpfile.version()?;
     let opts = PrintOptions::parse(matches)?;
     let mut components = Components::from(&version, &opts)?;
     print!("{}", assemble(&version, &opts, &mut components)?);
     Ok(())
 }
 
-pub fn to_string(version: &Version, print_type: PrintType) -> Result<String, BumpError> {
-    let opts = print_type.options();
-    let mut components = Components::from(version, &opts)?;
-    assemble(version, &opts, &mut components)
+pub fn to_string(version: &Version, opts: &PrintOptions) -> Result<String, BumpError> {
+    let mut components = Components::from(version, opts)?;
+    assemble(version, opts, &mut components)
 }
 
 pub fn assemble(

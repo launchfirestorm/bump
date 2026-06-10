@@ -1,6 +1,6 @@
 use crate::{
-    bump::{BumpError, resolve_path},
-    print::{self, PrintType},
+    bump::{BumpError, load_bumpfile, resolve_path},
+    print::{self, PrintOptions},
     version::Version,
 };
 use clap::ArgMatches;
@@ -36,8 +36,8 @@ fn set_toml_field(
 
 /// Update a file with the version from the bumpfile
 pub fn modify_file(matches: &ArgMatches) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let bumpfile = load_bumpfile(matches)?;
+    let version = bumpfile.version()?;
     let path_str = matches.get_one::<String>("path").ok_or_else(|| {
         BumpError::IoError(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -59,7 +59,7 @@ pub fn cargo_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
     let mut doc = load_toml(path)?;
 
     // Cargo `package.version` must be semver without a leading `v` (or other prefix).
-    let v_str = print::to_string(version, PrintType::NoPrefix)?;
+    let v_str = print::to_string(version, &PrintOptions::no_prefix())?;
     println!("cargo doesn't like a character prefix in Cargo.toml, stripping prefix");
 
     set_toml_field(&mut doc, "package", "version", &v_str)?;
@@ -88,7 +88,7 @@ pub fn pyproject_toml(version: &Version, path: &Path) -> Result<(), BumpError> {
         "{yellow}  Public version identifiers MUST NOT include leading or trailing whitespace.{reset}"
     );
 
-    let v_str = print::to_string(version, PrintType::Regular)?;
+    let v_str = print::to_string(version, &PrintOptions::default())?;
     if doc.get_mut("project").is_some() {
         set_toml_field(&mut doc, "project", "version", &v_str)?;
         save_toml(path, &doc)?;

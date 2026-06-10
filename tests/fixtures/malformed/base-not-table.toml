@@ -1,0 +1,4 @@
+prefix = "v"
+
+[[base]]
+mode = "semver"

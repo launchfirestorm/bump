@@ -2,10 +2,16 @@
 
 set -euo pipefail
 
-# Integration tests for bump print output across bump types and label positions.
+# Integration tests for bump print output.
+# Tier 1: workflow sections with full print-flag permutations (single label position).
+# Tier 2: all six label slots with focused label-placement assertions.
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+source "$(dirname "$0")/lib.sh"
+
+PREFIX="v-"
+LABEL="-tiger"
+PHASE_NAMED=".big.cat"
+DEFAULT_LABEL_POSITION="after-base"
 
 LABEL_POSITIONS=(
     before-prefix
@@ -15,12 +21,6 @@ LABEL_POSITIONS=(
     before-phase
     after-phase
 )
-
-BUMP_BIN="${BUMP_BIN:-$ROOT/target/release/bump}"
-
-bump() {
-    "$BUMP_BIN" "$@"
-}
 
 assert_eq() {
     local name="$1"
@@ -40,7 +40,6 @@ assert_eq() {
 section_banner() {
     echo "========================================"
     echo "SECTION: $1"
-    echo "LABEL:   $2"
     echo "========================================"
 }
 
@@ -56,6 +55,12 @@ set_label_position() {
 refresh_metadata() {
     GIT_SHA="$(git rev-parse --short HEAD)"
     TIMESTAMP="$(grep '^last = ' bump.toml | sed 's/^last = "\(.*\)"/\1/')"
+}
+
+setup_bumpfile() {
+    bump init >/dev/null
+    bump --prefix "$PREFIX" >/dev/null
+    refresh_metadata
 }
 
 format_phase() {
@@ -90,7 +95,6 @@ assemble() {
     [[ "$no_phase" == "1" ]] && use_phase=0
 
     local out=""
-    local label="DEV"
 
     label_visible() {
         local pos="$1"
@@ -99,29 +103,29 @@ assemble() {
     }
 
     if label_visible "before-prefix" "$use_prefix"; then
-        out+="$label"
+        out+="$LABEL"
     fi
     if [[ "$use_prefix" == "1" ]]; then
         out+="$prefix"
     fi
     if label_visible "after-prefix" "$use_prefix"; then
-        out+="$label"
+        out+="$LABEL"
     elif label_visible "before-base" "$use_base"; then
-        out+="$label"
+        out+="$LABEL"
     fi
     if [[ "$use_base" == "1" ]]; then
         out+="$base"
     fi
     if label_visible "after-base" "$use_base"; then
-        out+="$label"
+        out+="$LABEL"
     elif label_visible "before-phase" "$use_phase"; then
-        out+="$label"
+        out+="$LABEL"
     fi
     if [[ "$use_phase" == "1" ]]; then
         out+="$phase"
     fi
     if label_visible "after-phase" "$use_phase"; then
-        out+="$label"
+        out+="$LABEL"
     fi
 
     echo -n "$out"
@@ -152,21 +156,45 @@ run_print_permutations() {
     assert_eq "${section}/default" "$default" p
     assert_eq "${section}/only-prefix" "$prefix" p --only-prefix
     assert_eq "${section}/only-base" "$base" p --only-base
-    assert_eq "${section}/only-base-with-label" "$base" p --only-base --with-label DEV
+    assert_eq "${section}/only-base-with-label" "$base" p --only-base --with-label "$LABEL"
     assert_eq "${section}/only-phase" "$phase" p --only-phase
     assert_eq "${section}/no-prefix" "${base}${phase}" p --no-prefix
     assert_eq "${section}/no-phase" "${prefix}${base}" p --no-phase
-    assert_eq "${section}/with-label" "$with_label" p --with-label DEV
-    assert_eq "${section}/with-label-no-phase" "$with_label_no_phase" p --with-label DEV --no-phase
-    assert_eq "${section}/with-label-no-prefix" "$with_label_no_prefix" p --with-label DEV --no-prefix
+    assert_eq "${section}/with-label" "$with_label" p --with-label "$LABEL"
+    assert_eq "${section}/with-label-no-phase" "$with_label_no_phase" p --with-label "$LABEL" --no-phase
+    assert_eq "${section}/with-label-no-prefix" "$with_label_no_prefix" p --with-label "$LABEL" --no-prefix
     assert_eq "${section}/with-suffix" "${default}+${GIT_SHA}" p --with-suffix
-    assert_eq "${section}/with-label-with-suffix" "${with_label}+${GIT_SHA}" p --with-label DEV --with-suffix
+    assert_eq "${section}/with-label-with-suffix" "${with_label}+${GIT_SHA}" p --with-label "$LABEL" --with-suffix
     assert_eq "${section}/with-timestamp" "${default}  ${TIMESTAMP}" p --with-timestamp
     assert_eq "${section}/no-prefix-no-phase" "${base}" p --no-prefix --no-phase
-    assert_eq "${section}/no-prefix-no-phase-with-label" "$with_label_no_prefix_no_phase" p --no-prefix --no-phase --with-label DEV
+    assert_eq "${section}/no-prefix-no-phase-with-label" "$with_label_no_prefix_no_phase" p --no-prefix --no-phase --with-label "$LABEL"
     assert_eq "${section}/no-prefix-no-phase-with-suffix-with-timestamp" "${base}+${GIT_SHA}  ${TIMESTAMP}" p --no-prefix --no-phase --with-suffix --with-timestamp
     assert_eq "${section}/full" "${default}+${GIT_SHA}  ${TIMESTAMP}" p --full
-    assert_eq "${section}/full-with-label" "${with_label}+${GIT_SHA}  ${TIMESTAMP}" p --full --with-label DEV
+    assert_eq "${section}/full-with-label" "${with_label}+${GIT_SHA}  ${TIMESTAMP}" p --full --with-label "$LABEL"
+}
+
+run_label_slots() {
+    local label_pos="$1"
+    local prefix="$2"
+    local base="$3"
+    local phase_name="$4"
+    local phase_distance="$5"
+
+    local phase
+    phase="$(format_phase "$phase_name" "$phase_distance")"
+    local with_label
+    with_label="$(assemble "$prefix" "$base" "$phase" "$label_pos" 0 0 1)"
+    local with_label_no_phase
+    with_label_no_phase="$(assemble "$prefix" "$base" "" "$label_pos" 0 1 1)"
+    local with_label_no_prefix
+    with_label_no_prefix="$(assemble "" "$base" "$phase" "$label_pos" 1 0 1)"
+
+    assert_eq "label/${label_pos}/with-label" "$with_label" p --with-label "$LABEL"
+    assert_eq "label/${label_pos}/with-label-no-phase" "$with_label_no_phase" p --with-label "$LABEL" --no-phase
+    assert_eq "label/${label_pos}/with-label-no-prefix" "$with_label_no_prefix" p --with-label "$LABEL" --no-prefix
+    assert_eq "label/${label_pos}/only-base-with-label" "$base" p --only-base --with-label "$LABEL"
+    assert_eq "label/${label_pos}/with-suffix" "${with_label}+${GIT_SHA}" p --with-label "$LABEL" --with-suffix
+    assert_eq "label/${label_pos}/full-with-label" "${with_label}+${GIT_SHA}  ${TIMESTAMP}" p --full --with-label "$LABEL"
 }
 
 init_calver() {
@@ -210,73 +238,76 @@ today_calver_base() {
 GIT_SHA="$(git rev-parse --short HEAD)"
 
 # ---------------------------------------------------------------------------
-# Phase bumping (named, increment, switch) × label positions
+# Tier 1: Phase bumping (after-base only)
 # ---------------------------------------------------------------------------
 
-for label_pos in "${LABEL_POSITIONS[@]}"; do
-    section_banner "Phase bumping" "$label_pos"
+section_banner "Phase bumping"
 
-    bump init >/dev/null
-    set_label_position "$label_pos"
-    refresh_metadata
+setup_bumpfile
 
-    bump --phase alpha >/dev/null
-    refresh_metadata
-    run_print_permutations "phase/named-alpha" "v" "0.1.0" "alpha" "1" "$label_pos"
+bump --phase "$PHASE_NAMED" >/dev/null
+refresh_metadata
+run_print_permutations "phase/named" "$PREFIX" "0.1.0" "$PHASE_NAMED" "1" "$DEFAULT_LABEL_POSITION"
 
-    bump --phase >/dev/null
-    refresh_metadata
-    run_print_permutations "phase/increment" "v" "0.1.0" "alpha" "2" "$label_pos"
+bump --phase >/dev/null
+refresh_metadata
+run_print_permutations "phase/increment" "$PREFIX" "0.1.0" "$PHASE_NAMED" "2" "$DEFAULT_LABEL_POSITION"
 
-    bump --phase beta >/dev/null
-    refresh_metadata
-    run_print_permutations "phase/switch-beta" "v" "0.1.0" "beta" "1" "$label_pos"
-done
+bump --phase beta >/dev/null
+refresh_metadata
+run_print_permutations "phase/switch-beta" "$PREFIX" "0.1.0" "beta" "1" "$DEFAULT_LABEL_POSITION"
 
 # ---------------------------------------------------------------------------
-# Formal bumping (patch, minor, major) × label positions
+# Tier 1: Formal bumping (after-base only)
 # ---------------------------------------------------------------------------
 
-for label_pos in "${LABEL_POSITIONS[@]}"; do
-    section_banner "Formal bumping" "$label_pos"
+section_banner "Formal bumping"
 
-    bump init >/dev/null
-    set_label_position "$label_pos"
-    refresh_metadata
+setup_bumpfile
 
-    bump --patch >/dev/null
-    refresh_metadata
-    run_print_permutations "formal/patch" "v" "0.1.1" "" "0" "$label_pos"
+bump --patch >/dev/null
+refresh_metadata
+run_print_permutations "formal/patch" "$PREFIX" "0.1.1" "" "0" "$DEFAULT_LABEL_POSITION"
 
-    bump --minor >/dev/null
-    refresh_metadata
-    run_print_permutations "formal/minor" "v" "0.2.0" "" "0" "$label_pos"
+bump --minor >/dev/null
+refresh_metadata
+run_print_permutations "formal/minor" "$PREFIX" "0.2.0" "" "0" "$DEFAULT_LABEL_POSITION"
 
-    bump --major >/dev/null
-    refresh_metadata
-    run_print_permutations "formal/major" "v" "1.0.0" "" "0" "$label_pos"
-done
+bump --major >/dev/null
+refresh_metadata
+run_print_permutations "formal/major" "$PREFIX" "1.0.0" "" "0" "$DEFAULT_LABEL_POSITION"
 
 # ---------------------------------------------------------------------------
-# Calendar bumping (date update, same-day distance) × label positions
+# Tier 1: Calendar bumping (after-base only)
 # ---------------------------------------------------------------------------
+
+section_banner "Calendar bumping"
 
 CALVER_TODAY="$(today_calver_base)"
 
+init_calver
+refresh_metadata
+
+bump --calendar >/dev/null
+refresh_metadata
+run_print_permutations "calendar/date" "" "$CALVER_TODAY" "" "0" "$DEFAULT_LABEL_POSITION"
+
+bump --calendar >/dev/null
+refresh_metadata
+run_print_permutations "calendar/same-day" "" "$CALVER_TODAY" "" "1" "$DEFAULT_LABEL_POSITION"
+
+# ---------------------------------------------------------------------------
+# Tier 2: Label position slots (all six)
+# ---------------------------------------------------------------------------
+
+section_banner "Label positions"
+
 for label_pos in "${LABEL_POSITIONS[@]}"; do
-    section_banner "Calendar bumping" "$label_pos"
-
-    init_calver
+    setup_bumpfile
     set_label_position "$label_pos"
+    bump --phase "$PHASE_NAMED" >/dev/null
     refresh_metadata
-
-    bump --calendar >/dev/null
-    refresh_metadata
-    run_print_permutations "calendar/date" "" "$CALVER_TODAY" "" "0" "$label_pos"
-
-    bump --calendar >/dev/null
-    refresh_metadata
-    run_print_permutations "calendar/same-day" "" "$CALVER_TODAY" "" "1" "$label_pos"
+    run_label_slots "$label_pos" "$PREFIX" "0.1.0" "$PHASE_NAMED" "1"
 done
 
 echo "All output tests passed."

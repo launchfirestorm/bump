@@ -1,5 +1,6 @@
+use crate::bumpfile::BumpFile;
 use crate::lang::{self, Language};
-use crate::print::{self, PrintType};
+use crate::print::{self, PrintOptions};
 use crate::version::Version;
 use clap::ArgMatches;
 use std::{
@@ -51,10 +52,8 @@ pub fn resolve_path(input_path: &str) -> PathBuf {
     let path = Path::new(input_path);
 
     if path.is_absolute() {
-        // Absolute path - return as is
         path.to_path_buf()
     } else {
-        // Relative path - resolve relative to current directory
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(path)
@@ -74,12 +73,11 @@ pub fn has_meta_flags(matches: &ArgMatches) -> bool {
     matches.get_one::<String>("prefix").is_some() || matches.get_one::<String>("suffix").is_some()
 }
 
-pub fn get_version(matches: &ArgMatches) -> Result<Version, BumpError> {
+pub fn load_bumpfile(matches: &ArgMatches) -> Result<BumpFile, BumpError> {
     let version_file_path = matches
         .get_one::<String>("bumpfile")
         .expect("PATH not provided");
-    let version_path = resolve_path(version_file_path);
-    Version::from_file(&version_path)
+    BumpFile::load(resolve_path(version_file_path))
 }
 
 pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
@@ -101,17 +99,19 @@ pub fn get_bump_type(matches: &ArgMatches) -> Result<BumpType, BumpError> {
 }
 
 pub fn initialize(matches: &ArgMatches) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let filepath = resolve_path(bumpfile);
-    ensure_directory_exists(&filepath)?;
-    let version = Version::default(&filepath);
-    version.create_file()?;
-    println!("Initialized new BUMPFILE at '{}'", filepath.display());
+    let bumpfile_path = matches.get_one::<String>("bumpfile").unwrap();
+    let filepath = resolve_path(bumpfile_path);
+    let bumpfile = BumpFile::create(&filepath)?;
+    println!(
+        "Initialized new BUMPFILE at '{}'",
+        bumpfile.path().display()
+    );
     Ok(())
 }
 
 pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
-    let mut version = get_version(matches)?;
+    let mut bumpfile = load_bumpfile(matches)?;
+    let mut version = bumpfile.version()?;
     let has_meta = has_meta_flags(matches);
     let has_formal = matches.contains_id("formal");
 
@@ -126,13 +126,13 @@ pub fn apply(matches: &ArgMatches) -> Result<(), BumpError> {
         version.bump(&get_bump_type(matches)?)?;
         println!(
             "bumped {} to {}",
-            version.path.display(),
-            print::to_string(&version, PrintType::WithTimestamp)?
+            bumpfile.path().display(),
+            print::to_string(&version, &PrintOptions::with_timestamp())?
         );
     }
 
     if has_meta || has_formal {
-        version.to_file()?;
+        bumpfile.save(&version)?;
     }
 
     Ok(())
@@ -178,8 +178,8 @@ pub fn get_git_branch() -> Result<String, BumpError> {
 }
 
 pub fn generate(matches: &ArgMatches, lang: Language) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let bumpfile = load_bumpfile(matches)?;
+    let version = bumpfile.version()?;
     let output_files: Vec<&String> = matches.get_many::<String>("output").unwrap().collect();
     for output_file in output_files {
         let output_path = Path::new(output_file);
@@ -210,7 +210,7 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
         return Err(BumpError::LogicError("Not in a git repository".to_string()));
     }
 
-    let tag_name = print::to_string(version, PrintType::Regular)?;
+    let tag_name = print::to_string(version, &PrintOptions::default())?;
 
     if git_tag_exists(&tag_name)? {
         return Err(BumpError::Git(format!("Tag '{tag_name}' already exists")));
@@ -242,8 +242,8 @@ pub fn create_git_tag(version: &Version, message: Option<&str>) -> Result<(), Bu
 }
 
 pub fn tag_version(matches: &ArgMatches) -> Result<(), BumpError> {
-    let bumpfile = matches.get_one::<String>("bumpfile").unwrap();
-    let version = Version::from_file(&resolve_path(bumpfile))?;
+    let bumpfile = load_bumpfile(matches)?;
+    let version = bumpfile.version()?;
     let message = matches.get_one::<String>("message");
 
     create_git_tag(&version, message.map(String::as_str))

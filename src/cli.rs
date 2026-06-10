@@ -1,20 +1,57 @@
-use clap::{Arg, Command};
+use clap::builder::styling::{AnsiColor, Styles};
+use clap::builder::StyledStr;
+use clap::{Arg, Command, value_parser};
+use clap_complete::aot::Shell;
+use std::fmt::Write;
+
+const HELP_STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Blue.on_default().bold())
+    .usage(AnsiColor::Cyan.on_default().bold())
+    .literal(AnsiColor::Green.on_default().bold())
+    .placeholder(AnsiColor::Yellow.on_default())
+    .context(AnsiColor::BrightBlack.on_default())
+    .context_value(AnsiColor::Cyan.on_default());
+
+fn root_usage() -> StyledStr {
+    let literal = HELP_STYLES.get_literal();
+    let placeholder = HELP_STYLES.get_placeholder();
+    let mut usage = StyledStr::new();
+    let _ = write!(
+        usage,
+        "{literal}bump{literal:#} {placeholder}[OPTIONS]{placeholder:#} {placeholder}[COMMAND]{placeholder:#} {placeholder}[BUMPFILE]{placeholder:#}"
+    );
+    usage
+}
 
 #[allow(clippy::too_many_lines)]
 pub fn cli() -> Command {
+    let bumpfile_arg = Arg::new("bumpfile")
+        .value_name("BUMPFILE")
+        .value_parser(clap::value_parser!(String))
+        .default_value("bump.toml")
+        .display_order(100)
+        .help("Path to the configuration file");
+
     Command::new("bump")
+        .styles(HELP_STYLES)
         .version(env!("CARGO_PKG_VERSION"))
         .about("Automatic un-opinionated version bumping")
-        .arg(
-            Arg::new("bumpfile")
-                .value_name("BUMPFILE")
-                .value_parser(clap::value_parser!(String))
-                .default_value("bump.toml")
-                .global(true)
-                .help("Path to the configuration file")
+        .override_usage(root_usage())
+        .subcommand(
+            Command::new("init")
+                .about("Initialize a new version file with default values")
+                .arg(&bumpfile_arg)
         )
         .subcommand(
-            Command::new("init").about("Initialize a new version file with default values")
+            Command::new("completion")
+                .about("Generate shell completion script")
+                .arg(
+                    Arg::new("shell")
+                        .value_name("SHELL")
+                        .value_parser(value_parser!(Shell))
+                        .required(true)
+                        .help("Output shell completion script for SHELL"),
+                ),
         )
         .subcommand(
             Command::new("gen")
@@ -39,6 +76,7 @@ pub fn cli() -> Command {
                         .required(true)
                         .help("Output files for header generation (multiple files can be generated from a single bumpfile)")
                 )
+                .arg(&bumpfile_arg)
         )
         .subcommand(
             Command::new("tag")
@@ -51,6 +89,7 @@ pub fn cli() -> Command {
                         .value_parser(clap::value_parser!(String))
                         .help("Custom tag message (defaults to conventional commit format)")
                 )
+                .arg(&bumpfile_arg)
         )
         .subcommand(
             Command::new("update")
@@ -63,7 +102,7 @@ pub fn cli() -> Command {
                         .required(true)
                         .help("Certain file types bump is aware of, and know how to update")
                 )
-
+                .arg(&bumpfile_arg)
         )
         .subcommand(Command::new("print")
             .about("Print [prefix][base][phase] from BUMPFILE without newline")
@@ -123,26 +162,12 @@ pub fn cli() -> Command {
                 Arg::new("with-label")
                     .long("with-label")
                     .value_name("LABEL")
+                    .allow_hyphen_values(true)
                     .value_parser(clap::value_parser!(String))
                     .num_args(1)
                     .help("Inject LABEL at [label].position (not persisted)"),
             )
-        )
-        .arg(
-            Arg::new("prefix")
-                .long("prefix")
-                .value_name("PREFIX")
-                .value_parser(clap::value_parser!(String))
-                .num_args(1)
-                .help("Set prefix string (i.e: 'v', 'release-')")
-        )
-        .arg(
-            Arg::new("suffix")
-                .long("suffix")
-                .value_name("MODE")
-                .value_parser(clap::value_parser!(String))
-                .num_args(1)
-                .help("Set suffix mode 'git_sha' or 'branch'")
+            .arg(&bumpfile_arg)
         )
         .arg(
             Arg::new("major")
@@ -183,4 +208,22 @@ pub fn cli() -> Command {
                 .help("Update version based on current calendar date")
                 .group("formal")
         )
+        .arg(
+            Arg::new("prefix")
+                .long("prefix")
+                .value_name("PREFIX")
+                .value_parser(clap::value_parser!(String))
+                .allow_hyphen_values(true)
+                .num_args(1)
+                .help("Set prefix string (i.e: 'v', 'release-')")
+        )
+        .arg(
+            Arg::new("suffix")
+                .long("suffix")
+                .value_name("MODE")
+                .value_parser(clap::value_parser!(String))
+                .num_args(1)
+                .help("Set suffix mode 'git_sha' or 'branch'")
+        )
+        .arg(&bumpfile_arg)
 }

@@ -1,8 +1,10 @@
 use crate::bump::BumpError;
 use crate::lang::Language;
+use clap_complete::aot::{Shell, generate};
 use std::process::ExitCode;
 
 mod bump;
+mod bumpfile;
 mod cli;
 mod lang;
 mod print;
@@ -20,6 +22,15 @@ fn egress(result: Result<(), BumpError>) -> ExitCode {
 fn main() -> ExitCode {
     let matches = cli::cli().get_matches();
     match matches.subcommand() {
+        Some(("completion", sub_matches)) => {
+            let shell = sub_matches
+                .get_one::<Shell>("shell")
+                .copied()
+                .expect("SHELL not provided");
+            let mut cmd = cli::cli();
+            generate(shell, &mut cmd, "bump", &mut std::io::stdout());
+            ExitCode::SUCCESS
+        }
         Some(("init", sub_matches)) => egress(bump::initialize(sub_matches)),
         Some(("gen", sub_matches)) => {
             let lang_str = sub_matches

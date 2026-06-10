@@ -1,11 +1,7 @@
 use crate::bump::{BumpError, BumpType};
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt, fs, io,
-    path::{Path, PathBuf},
-};
-use toml_edit::{DocumentMut, value};
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,13 +82,13 @@ impl LabelPosition {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Timestamp {
     pub format: String,
     pub last: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
     pub mode: VersionMode,
     pub delimiter: String,
@@ -109,7 +105,7 @@ pub struct Base {
     pub patch: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Phase {
     pub separator: String,
     pub name: String,
@@ -117,179 +113,28 @@ pub struct Phase {
     pub distance: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Suffix {
     pub mode: SuffixMode,
     pub separator: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Label {
     pub position: LabelPosition,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Version {
-    #[serde(skip)]
-    pub path: PathBuf,
     pub prefix: String,
-    pub timestamp: Timestamp,
     pub base: Base,
     pub phase: Phase,
     pub suffix: Suffix,
+    pub timestamp: Timestamp,
     pub label: Label,
 }
 
-const INIT_TEMPLATE_TIMESTAMP: &str = "1970-01-01 00:00:00 UTC";
-
 impl Version {
-    pub fn default(path: &Path) -> Self {
-        let content = include_str!("templates/bump.toml")
-            .replace("{timestamp}", INIT_TEMPLATE_TIMESTAMP);
-        let mut version: Self = toml::from_str(&content).expect("init template must deserialize");
-        version.path = path.to_path_buf();
-        version.timestamp.last = chrono::Utc::now()
-            .format(&version.timestamp.format)
-            .to_string();
-        version
-    }
-
-    pub fn create_file(&self) -> Result<(), BumpError> {
-        let current_timestamp = chrono::Utc::now()
-            .format(&self.timestamp.format)
-            .to_string();
-        let content =
-            include_str!("templates/bump.toml").replace("{timestamp}", &current_timestamp);
-        fs::write(&self.path, content).map_err(BumpError::IoError)
-    }
-
-    fn warn_mode_key_mismatch(path: &Path, content: &str) -> Result<(), BumpError> {
-        let doc = content
-            .parse::<DocumentMut>()
-            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
-
-        let base = doc
-            .get("base")
-            .and_then(|item| item.as_table())
-            .ok_or_else(|| {
-                BumpError::ParseError(format!(
-                    "'base' table not found in {}. \
-                Recreate your bumpfile with 'bump init'.",
-                    path.display()
-                ))
-            })?;
-
-        let mode = base
-            .get("mode")
-            .and_then(|v| v.as_str())
-            .unwrap_or(VersionMode::Semver.as_str());
-        let has_calver_keys = ["year", "month", "day"]
-            .iter()
-            .any(|key| base.contains_key(key));
-
-        if mode == VersionMode::Semver.as_str() && has_calver_keys {
-            println!(
-                "bump warning: [base].mode is semver, but found calver keys (year/month/day) in {}. \
-                \nThey will be treated as major/minor/patch and rewritten on save.",
-                path.display()
-            );
-        }
-
-        Ok(())
-    }
-
-    pub fn from_file(path: &Path) -> Result<Self, BumpError> {
-        let content = fs::read_to_string(path).map_err(|err| {
-            if err.kind() == io::ErrorKind::NotFound {
-                BumpError::LogicError(format!(
-                    "Configuration file not found at '{}'. Create one with 'bump init'",
-                    path.display()
-                ))
-            } else {
-                BumpError::IoError(err)
-            }
-        })?;
-
-        Self::warn_mode_key_mismatch(path, &content)?;
-
-        let version_parsed: Self = match toml::from_str(&content) {
-            Ok(v) => {
-                let mut version: Version = v;
-                version.path = path.to_path_buf();
-                version
-            }
-            Err(err) => {
-                return Err(BumpError::ParseError(format!(
-                    "Failed to parse version file '{}': {}. \
-                    Recreate your bumpfile with 'bump init'.",
-                    path.display(),
-                    err
-                )));
-            }
-        };
-
-        Ok(version_parsed)
-    }
-
-    fn base_remap(&self, doc: &mut DocumentMut) {
-        let Some(base_table) = doc["base"].as_table_mut() else {
-            return;
-        };
-
-        let (major_key, minor_key, patch_key, old_major, old_minor, old_patch) =
-            if self.base.mode == VersionMode::Calver {
-                ("year", "month", "day", "major", "minor", "patch")
-            } else {
-                ("major", "minor", "patch", "year", "month", "day")
-            };
-
-        base_table[major_key] = value(i64::from(self.base.major));
-        base_table.remove(old_major);
-
-        if let Some(minor) = self.base.minor {
-            base_table[minor_key] = value(i64::from(minor));
-        } else {
-            base_table.remove(minor_key);
-        }
-        base_table.remove(old_minor);
-
-        if let Some(patch) = self.base.patch {
-            base_table[patch_key] = value(i64::from(patch));
-        } else {
-            base_table.remove(patch_key);
-        }
-        base_table.remove(old_patch);
-    }
-
-    pub fn to_file(&self) -> Result<(), BumpError> {
-        if !self.path.exists() {
-            return Err(BumpError::IoError(io::Error::new(
-                io::ErrorKind::NotFound,
-                self.path.display().to_string(),
-            )));
-        }
-        let original_content = fs::read_to_string(&self.path).map_err(BumpError::IoError)?;
-        let mut doc = original_content
-            .parse::<DocumentMut>()
-            .map_err(|e| BumpError::ParseError(format!("Failed to parse TOML document: {e}")))?;
-
-        doc["prefix"] = value(&self.prefix);
-        doc["timestamp"]["format"] = value(&self.timestamp.format);
-        doc["timestamp"]["last"] = value(&self.timestamp.last);
-        doc["base"]["mode"] = value(self.base.mode.as_str());
-        doc["base"]["delimiter"] = value(&self.base.delimiter);
-        self.base_remap(&mut doc);
-        doc["phase"]["separator"] = value(&self.phase.separator);
-        doc["phase"]["name"] = value(&self.phase.name);
-        doc["phase"]["delimiter"] = value(&self.phase.delimiter);
-        doc["phase"]["distance"] = value(i64::from(self.phase.distance));
-        doc["suffix"]["mode"] = value(self.suffix.mode.as_str());
-        doc["suffix"]["separator"] = value(&self.suffix.separator);
-        doc["label"]["position"] = value(self.label.position.as_str());
-
-        fs::write(self.path.as_path(), doc.to_string()).map_err(BumpError::IoError)
-    }
-
     fn right_mode(&self, expected_mode: VersionMode) -> Result<(), BumpError> {
         if self.base.mode == expected_mode {
             Ok(())

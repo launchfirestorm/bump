@@ -77,21 +77,6 @@ bump print --no-prefix --with-suffix [BUMPFILE]
 
 Suffix output (`--with-suffix`, `--full`) requires a git repository.
 
-### PRO TIP: you can inject bump _everywhere_
-```bash
-sed -i "s|REPLACE_ME|$(bump print)|g" somefile
-```
-
-```cmake
-# CMakeLists.txt
-execute_process(
-  COMMAND bump print --only-base
-  WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/
-  OUTPUT_VARIABLE VERSION)
-project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
-```
-
-
 ### SemVer Commands
 
 ```bash
@@ -121,25 +106,6 @@ Update bumpfile fields without a formal version bump:
 ```bash
 bump --prefix v2-
 bump --suffix branch
-```
-
-## Recommended Workflow (v7)
-
-```bash
-# 1) bump version state in bump.toml
-bump --minor
-
-# 2) update project metadata files (optional)
-bump update Cargo.toml
-
-# 3) inspect version output for build/release jobs
-bump print --full
-
-# 4) commit and tag
-git add bump.toml Cargo.toml
-git commit -m "chore(release): update version to $(bump print)"
-bump tag
-git push origin HEAD --tags
 ```
 
 ### Mode/key compatibility behavior
@@ -172,7 +138,7 @@ bump gen --lang c --output version.h custom.toml
 ### Git Integration
 
 ```bash
-# Create a git tag for the current version (conventional commit message by default)
+# Create a git annotated tag (git tag -a) for the current version (conventional commit message by default)
 bump tag [BUMPFILE]
 
 # Create a tag with custom message
@@ -189,12 +155,6 @@ bump update pyproject.toml [BUMPFILE]
 ```
 
 
-## Documentation
-
-- **[Configuration Reference](docs/CONFIGURATION.md)** — bumpfile schema, print flags, and mode behavior
-- **[Workflow Guide](docs/WORKFLOW.md)** — release pipelines, phases, labels, and CI examples
-- **[Contributing Guide](docs/CONTRIBUTING.md)** — build from source, run integration tests, and project layout
-
 ## GitHub Actions
 
 The composite action `action.yml` at the repo root installs bump for the job's OS/arch:
@@ -210,5 +170,61 @@ If your token differs from the default `GITHUB_TOKEN`:
   with:
     token: ${{ secrets.YOUR_TOKEN_HERE }}
 ```
+
+## Tips and Tricks
+
+you can inject bump _everywhere_
+```bash
+sed -i "s|REPLACE_ME|$(bump print --no-prefix)|g" somefile
+```
+
+```cmake
+# CMakeLists.txt
+execute_process(
+  COMMAND bump print --only-base
+  WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/
+  OUTPUT_VARIABLE VERSION)
+project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
+```
+
+### Shell Completion
+
+`bump completion SHELL` prints a completion script for the given shell. Regenerate after upgrading `bump` so completions stay in sync with new flags and subcommands.
+
+Supported shells: `bash`, `elvish`, `fish`, `powershell`, `zsh`.
+
+**Bash:**
+
+```bash
+bump completion bash >> ~/.bash_completion.d/bump
+# or load once in the current session:
+source <(bump completion bash)
+```
+
+**Zsh:**
+
+```zsh
+mkdir -p ~/.zsh/completions
+bump completion zsh > ~/.zsh/completions/_bump
+# add to ~/.zshrc if needed: fpath=(~/.zsh/completions $fpath); autoload -Uz compinit && compinit
+```
+
+**Fish:**
+
+```fish
+bump completion fish > ~/.config/fish/completions/bump.fish
+```
+
+**PowerShell:**
+
+```powershell
+bump completion powershell | Out-String | Invoke-Expression
+# or append to your profile:
+Add-Content $PROFILE 'bump completion powershell | Out-String | Invoke-Expression'
+```
+
+- **[Configuration Reference](docs/CONFIGURATION.md)** — bumpfile schema, print flags, and mode behavior
+- **[Workflow Guide](docs/WORKFLOW.md)** — release pipelines, phases, labels, and CI examples
+- **[Contributing Guide](docs/CONTRIBUTING.md)** — build from source, run integration tests, and project layout
 
 ## [MIT License](./LICENSE)
