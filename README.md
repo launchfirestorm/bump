@@ -77,21 +77,6 @@ bump print --no-prefix --with-suffix [BUMPFILE]
 
 Suffix output (`--with-suffix`, `--full`) requires a git repository.
 
-### PRO TIP: you can inject bump _everywhere_
-```bash
-sed -i "s|REPLACE_ME|$(bump print)|g" somefile
-```
-
-```cmake
-# CMakeLists.txt
-execute_process(
-  COMMAND bump print --only-base
-  WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/
-  OUTPUT_VARIABLE VERSION)
-project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
-```
-
-
 ### SemVer Commands
 
 ```bash
@@ -121,25 +106,6 @@ Update bumpfile fields without a formal version bump:
 ```bash
 bump --prefix v2-
 bump --suffix branch
-```
-
-## Recommended Workflow (v7)
-
-```bash
-# 1) bump version state in bump.toml
-bump --minor
-
-# 2) update project metadata files (optional)
-bump update Cargo.toml
-
-# 3) inspect version output for build/release jobs
-bump print --full
-
-# 4) commit and tag
-git add bump.toml Cargo.toml
-git commit -m "chore(release): update version to $(bump print)"
-bump tag
-git push origin HEAD --tags
 ```
 
 ### Mode/key compatibility behavior
@@ -172,7 +138,7 @@ bump gen --lang c --output version.h custom.toml
 ### Git Integration
 
 ```bash
-# Create a git tag for the current version (conventional commit message by default)
+# Create a git annotated tag (git tag -a) for the current version (conventional commit message by default)
 bump tag [BUMPFILE]
 
 # Create a tag with custom message
@@ -189,12 +155,6 @@ bump update pyproject.toml [BUMPFILE]
 ```
 
 
-## Documentation
-
-- **[Configuration Reference](docs/CONFIGURATION.md)** — bumpfile schema, print flags, and mode behavior
-- **[Workflow Guide](docs/WORKFLOW.md)** — release pipelines, phases, labels, and CI examples
-- **[Contributing Guide](docs/CONTRIBUTING.md)** — build from source, run integration tests, and project layout
-
 ## GitHub Actions
 
 The composite action `action.yml` at the repo root installs bump for the job's OS/arch:
@@ -210,5 +170,57 @@ If your token differs from the default `GITHUB_TOKEN`:
   with:
     token: ${{ secrets.YOUR_TOKEN_HERE }}
 ```
+
+## Tips and Tricks
+
+you can inject bump _everywhere_
+```bash
+sed -i "s|REPLACE_ME|$(bump print --no-prefix)|g" somefile
+```
+
+```cmake
+# CMakeLists.txt
+execute_process(
+  COMMAND bump print --only-base
+  WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/
+  OUTPUT_VARIABLE VERSION)
+project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
+```
+
+### Shell Completion
+
+`bump` supports dynamic tab completion when your shell supports it. Completions are generated from the installed binary, so they stay in sync across upgrades — add one of the following to your shell config and restart (or re-source) your shell.
+
+**Bash:**
+
+```bash
+echo 'source <(COMPLETE=bash bump)' >> ~/.bashrc
+```
+
+**Zsh:**
+
+```zsh
+echo 'source <(COMPLETE=zsh bump)' >> ~/.zshrc
+```
+
+**Fish:**
+
+```fish
+echo 'COMPLETE=fish bump | source' >> ~/.config/fish/completions/bump.fish
+```
+
+**PowerShell:**
+
+```powershell
+Add-Content $PROFILE '$env:COMPLETE = "powershell"; bump | Out-String | Invoke-Expression; Remove-Item Env:\COMPLETE'
+```
+
+To disable completions, set `COMPLETE=` or `COMPLETE=0`.
+
+## Documentation
+
+- **[Configuration Reference](docs/CONFIGURATION.md)** — bumpfile schema, print flags, and mode behavior
+- **[Workflow Guide](docs/WORKFLOW.md)** — release pipelines, phases, labels, and CI examples
+- **[Contributing Guide](docs/CONTRIBUTING.md)** — build from source, run integration tests, and project layout
 
 ## [MIT License](./LICENSE)

@@ -1,8 +1,18 @@
+use clap::builder::styling::{AnsiColor, Styles};
 use clap::{Arg, Command};
+
+const HELP_STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Yellow.on_default().bold())
+    .usage(AnsiColor::Cyan.on_default().bold())
+    .literal(AnsiColor::Green.on_default().bold())
+    .placeholder(AnsiColor::Blue.on_default())
+    .context(AnsiColor::BrightBlack.on_default())
+    .context_value(AnsiColor::Cyan.on_default());
 
 #[allow(clippy::too_many_lines)]
 pub fn cli() -> Command {
     Command::new("bump")
+        .styles(HELP_STYLES)
         .version(env!("CARGO_PKG_VERSION"))
         .about("Automatic un-opinionated version bumping")
         .arg(
