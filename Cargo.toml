@@ -1,11 +1,13 @@
 [package]
 name = "bump"
-version = "7.0.0"
+version = "7.1.0"
 edition = "2024"
+rust-version = "1.85"
 authors = ["Tony B"]
 description = "Automatic un-opinionated version bumping"
 license = "MIT"
 repository = "https://github.com/launchfirestorm/bump"
+homepage = "https://github.com/launchfirestorm/bump"
 readme = "README.md"
 keywords = ["cli", "versioning", "semver", "calver"]
 categories = ["command-line-utilities", "development-tools"]
@@ -17,7 +19,7 @@ path = "src/main.rs"
 [dependencies]
 chrono = { version = "0.4.42", features = ["clock"] }
 clap = "4"
-clap_complete = { version = "4", features = ["unstable-dynamic"] }
+clap_complete = "4"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.9"
 toml_edit = "0.23"

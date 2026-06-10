@@ -189,35 +189,39 @@ project("your-app" VERSION ${VERSION} LANGUAGES CXX C)
 
 ### Shell Completion
 
-`bump` supports dynamic tab completion when your shell supports it. Completions are generated from the installed binary, so they stay in sync across upgrades — add one of the following to your shell config and restart (or re-source) your shell.
+`bump completion SHELL` prints a completion script for the given shell. Regenerate after upgrading `bump` so completions stay in sync with new flags and subcommands.
+
+Supported shells: `bash`, `elvish`, `fish`, `powershell`, `zsh`.
 
 **Bash:**
 
 ```bash
-echo 'source <(COMPLETE=bash bump)' >> ~/.bashrc
+bump completion bash >> ~/.bash_completion.d/bump
+# or load once in the current session:
+source <(bump completion bash)
 ```
 
 **Zsh:**
 
 ```zsh
-echo 'source <(COMPLETE=zsh bump)' >> ~/.zshrc
+mkdir -p ~/.zsh/completions
+bump completion zsh > ~/.zsh/completions/_bump
+# add to ~/.zshrc if needed: fpath=(~/.zsh/completions $fpath); autoload -Uz compinit && compinit
 ```
 
 **Fish:**
 
 ```fish
-echo 'COMPLETE=fish bump | source' >> ~/.config/fish/completions/bump.fish
+bump completion fish > ~/.config/fish/completions/bump.fish
 ```
 
 **PowerShell:**
 
 ```powershell
-Add-Content $PROFILE '$env:COMPLETE = "powershell"; bump | Out-String | Invoke-Expression; Remove-Item Env:\COMPLETE'
+bump completion powershell | Out-String | Invoke-Expression
+# or append to your profile:
+Add-Content $PROFILE 'bump completion powershell | Out-String | Invoke-Expression'
 ```
-
-To disable completions, set `COMPLETE=` or `COMPLETE=0`.
-
-## Documentation
 
 - **[Configuration Reference](docs/CONFIGURATION.md)** — bumpfile schema, print flags, and mode behavior
 - **[Workflow Guide](docs/WORKFLOW.md)** — release pipelines, phases, labels, and CI examples
