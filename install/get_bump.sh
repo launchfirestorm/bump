@@ -51,12 +51,14 @@ curl -fsSL "${auth_header[@]}" -o "$tmp" "$url" || die "Download failed"
 [[ -s "$tmp" ]] || die "Downloaded file is empty"
 chmod +x "$tmp"
 
-# Install (use sudo if needed)
-[[ -d "$install_dir" ]] || { mkdir -p "$install_dir" 2>/dev/null || sudo mkdir -p "$install_dir"; }
-if [[ -w "$install_dir" ]]; then
+if [[ -w "$install_dir" ]]; then # if writable, install directly
+  [[ -d "$install_dir" ]] || mkdir -p "$install_dir"
   mv "$tmp" "$target"
-else
+elif command -v sudo >/dev/null 2>&1; then
+  [[ -d "$install_dir" ]] || sudo mkdir -p "$install_dir"
   sudo mv "$tmp" "$target"
+else
+  die "Cannot write to ${install_dir} — not root and sudo is not available"
 fi
 
 success "bump installed to ${target}"
