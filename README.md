@@ -24,7 +24,7 @@ I got tired of bespoke scripts and tons of regex parsing that differentiated sli
 **Linux, macOS, or WSL:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | bash
+curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | sh
 ```
 
 **Windows (PowerShell):**

@@ -4,15 +4,20 @@ $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $repo = 'launchfirestorm/bump'
-$token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } elseif ($env:GH_TOKEN) { $env:GH_TOKEN } else { '' }
+
+# Add token if available to avoid rate limits
 $headers = @{ 'User-Agent' = 'bump-installer'; 'Accept' = 'application/vnd.github+json' }
-if ($token) { $headers['Authorization'] = "Bearer $token" }
+if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
+elseif ($env:GH_TOKEN) { $headers['Authorization'] = "Bearer $($env:GH_TOKEN)" }
 
 function Die($msg) { Write-Host "[ERROR] $msg" -ForegroundColor Red; exit 1 }
 function Info($msg) { Write-Host "[INFO] $msg" }
 
-# Architecture
-$arch = switch ($env:PROCESSOR_ARCHITECTURE) { 'AMD64' { 'amd64' } 'ARM64' { 'arm64' } default { $null } }
+$arch = switch ($env:PROCESSOR_ARCHITECTURE) { 
+  'AMD64' { 'amd64' } 
+  'ARM64' { 'arm64' } 
+  default { $null } 
+}
 if (-not $arch) { Die "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
 Info "Platform: Windows ($arch)"
 

@@ -18,7 +18,7 @@ runs:
     - name: Install bump (Unix)
       if: runner.os != 'Windows'
       shell: bash
-      run: bash "${GITHUB_ACTION_PATH}/install/get_bump.sh"
+      run: ${GITHUB_ACTION_PATH}/install/get_bump.sh
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
 

@@ -1,64 +1,93 @@
-#!/usr/bin/env bash
-#
-# Bump installer — Linux / macOS / WSL. Always installs (or updates) the latest release.
+#!/bin/sh
+# Bump installer — Linux / macOS / WSL
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/launchfirestorm/bump/main/install/get_bump.sh | sh
 #
-set -euo pipefail
+# No GitHub token is required. GITHUB_TOKEN / GH_TOKEN are optional (CI rate limits).
+#
+set -eu
 
 REPO="launchfirestorm/bump"
 
-# Auth token (optional, avoids rate limits)
-TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-auth_header=()
-[[ -n "$TOKEN" ]] && auth_header=(-H "Authorization: Bearer ${TOKEN}")
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-info()    { echo -e "\033[0;34m[INFO]\033[0m $1"; }
-success() { echo -e "\033[0;32m[SUCCESS]\033[0m $1"; }
-die()     { echo -e "\033[0;31m[ERROR]\033[0m $1"; exit 1; }
+info()    { printf '%b[INFO]%b %s\n'    "$BLUE"  "$NC" "$*"; }
+success() { printf '%b[SUCCESS]%b %s\n' "$GREEN" "$NC" "$*"; }
+warn()    { printf '%b[WARN]%b %s\n'    "$YELLOW" "$NC" "$*"; }
+die()     { printf '%b[ERROR]%b %s\n'   "$RED"   "$NC" "$*" >&2; exit 1; }
 
-# Detect platform
-case "$(uname -m)-$(uname -s | cut -d- -f1)" in
-  x86_64-Linux)  os=linux;  arch=amd64 ;;
-  aarch64-Linux) os=linux;  arch=arm64 ;;
-  x86_64-Darwin) os=macos;  arch=amd64 ;;
-  arm64-Darwin)  os=macos;  arch=arm64 ;;
-  *) die "Unsupported platform: $(uname -m)-$(uname -s). On Windows use install/get_bump.ps1." ;;
+echo -e " ____  __  __  __  __  ____ "
+echo -e "(  _ \\(  )(  )(  \\/  )(  _ \\"
+echo -e " ) _ < )(__)(  )    (  )___/"
+echo -e "(____/(______)(_/\\/\\_)(__)  "
+
+command -v curl >/dev/null 2>&1 || die "curl is required"
+
+platform=$(uname -m)-$(uname -s | cut -d- -f1)
+case "$platform" in
+  *-MINGW64_NT|*-MSYS_NT|*-CYGWIN_NT)
+    die "Native Windows is not supported — use install/get_bump.ps1"
+    ;;
+  x86_64-Linux)   os=linux; arch=amd64 ;;
+  aarch64-Linux)  os=linux; arch=arm64 ;;
+  x86_64-Darwin)  os=macos; arch=amd64 ;;
+  arm64-Darwin)   os=macos; arch=arm64 ;;
+  *) die "Unsupported platform: $platform" ;;
 esac
-info "Platform: ${os}/${arch}"
+info "Platform: $os/$arch"
 
-# Resolve install target — update in place if bump already exists
+# Update in place when bump is already on PATH
 if command -v bump >/dev/null 2>&1; then
-  target="$(command -v bump)"
-  info "Updating existing bump at ${target} ($(bump --version 2>/dev/null || echo '?'))"
+  target=$(command -v bump)
+  version=$(bump --version 2>/dev/null || echo bump)
+  info "Updating $version at $target"
 else
-  target="/usr/local/bin/bump"
+  target=/usr/local/bin/bump
+  info "Installing to $target"
 fi
-install_dir="$(dirname "$target")"
+dir=$(dirname "$target")
 
-# Latest release tag
-tag=$(curl -fsSL "${auth_header[@]}" -H "Accept: application/vnd.github+json" -H "User-Agent: bump-install" \
-  "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-[[ -n "$tag" ]] || die "Failed to resolve latest release"
-info "Latest release: ${tag}"
+TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -n "$TOKEN" ]; then
+  json=$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$REPO/releases/latest") || die "Could not reach https://api.github.com"
+else
+  json=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$REPO/releases/latest") || die "Could not reach https://api.github.com"
+fi
 
-# Download
-url="https://github.com/${REPO}/releases/download/${tag}/bump-${os}-${arch}"
-info "Downloading: ${url}"
-tmp=$(mktemp)
-curl -fsSL "${auth_header[@]}" -o "$tmp" "$url" || die "Download failed"
-[[ -s "$tmp" ]] || die "Downloaded file is empty"
+tag=$(printf '%s\n' "$json" \
+  | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+
+[ -n "$tag" ] || die "Could not resolve latest release"
+info "Latest release: $tag"
+
+# Public release asset — never send auth (invalid tokens cause 401)
+asset_url="https://github.com/$REPO/releases/download/$tag/bump-$os-$arch"
+info "Downloading: $asset_url"
+
+tmp=$(mktemp) || die "Could not create temporary file"
+trap 'rm -f "$tmp"' EXIT INT TERM
+curl -fsSL -o "$tmp" "$asset_url" || die "Download failed"
+[ -s "$tmp" ] || die "Downloaded file is empty"
 chmod +x "$tmp"
 
-if [[ -w "$install_dir" ]]; then # if writable, install directly
-  [[ -d "$install_dir" ]] || mkdir -p "$install_dir"
-  mv "$tmp" "$target"
+if [ -w "$dir" ]; then
+  mkdir -p "$dir" || die "Could not create $dir"
+  mv "$tmp" "$target" || die "Could not install to $target"
 elif command -v sudo >/dev/null 2>&1; then
-  [[ -d "$install_dir" ]] || sudo mkdir -p "$install_dir"
-  sudo mv "$tmp" "$target"
+  info "Elevating with sudo to write $dir"
+  sudo mkdir -p "$dir" || die "Could not create $dir"
+  sudo mv "$tmp" "$target" || die "Install cancelled or failed"
 else
-  die "Cannot write to ${install_dir} — not root and sudo is not available"
+  die "Cannot write to $dir — run with sudo or as root"
 fi
+trap - EXIT INT TERM
 
-success "bump installed to ${target}"
+success "Installed bump $(bump --version) to $target"
